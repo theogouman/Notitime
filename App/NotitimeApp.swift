@@ -234,24 +234,52 @@ struct RootView: View {
 
 
 /// Libellé de la barre de menus (FR-025).
+///
+/// L'icône est toujours là, le texte dit l'état. Un gabarit monochrome de 18 pt
+/// ne peut porter que sa silhouette : la décliner par état la rendrait moins
+/// reconnaissable sans rien gagner en information, que le texte porte déjà.
 struct MenuBarLabel: View {
     @ObservedObject var state: RootState
 
     var body: some View {
+        HStack(spacing: 4) {
+            Image("MenuBarIcon")
+                // Le catalogue déclare déjà l'intention « gabarit » ; le répéter
+                // ici garantit la teinte automatique quel que soit le rendu.
+                .renderingMode(.template)
+            if let label = trailing {
+                Text(label)
+                    // Chiffres à chasse fixe : sans cela la largeur du libellé
+                    // change à chaque seconde, et l'icône se déplace avec.
+                    .monospacedDigit()
+            }
+        }
+        .accessibilityLabel(accessibilityLabel)
+    }
+
+    /// Ce qui suit l'icône, ou rien quand rien ne tourne.
+    private var trailing: String? {
         switch state.session?.phase {
         case .running(let remaining, let taskPageID):
+            let controller = state.session
+            // Le suivi libre n'a pas de cible : c'est le temps écoulé qui compte.
+            let time = remaining.map(SessionControls.format) ?? controller?.elapsedLabel ?? "00:00"
+            let marker = (controller?.isPaused ?? false) ? "⏸ " : ""
             // Le nom est raccourci : la barre de menus est étroite, et le
             // compte à rebours est ce qu'on vient y lire.
-            let title = state.session?.title(of: taskPageID) ?? "Tâche"
-            Text("\(SessionControls.format(remaining)) · \(MenuBarLabel.short(title))")
+            let title = controller?.title(of: taskPageID) ?? "Tâche"
+            return "\(marker)\(time) · \(MenuBarLabel.short(title))"
         case .onBreak(let remaining, _):
-            Text("☕︎ \(SessionControls.format(remaining))")
-        case .breakSuggested:
-            // La session est finie : l'icône seule, pas un décompte figé.
-            Image(systemName: "timer")
-        default:
-            Image(systemName: "timer")
+            return "☕︎ \(SessionControls.format(remaining))"
+        // Session finie ou repos : l'icône seule, jamais un décompte figé.
+        case .breakSuggested, .idle, nil:
+            return nil
         }
+    }
+
+    private var accessibilityLabel: String {
+        guard let trailing else { return "Notitime" }
+        return "Notitime — \(trailing)"
     }
 
     static func short(_ title: String, limit: Int = 18) -> String {

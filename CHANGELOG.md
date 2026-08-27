@@ -21,6 +21,15 @@ Comportements visibles par l'utilisateur, dans l'ordre des livraisons.
 - Connexion et réglages dans une fenêtre dédiée ; le menu reste réservé à
   l'usage quotidien.
 
+### Présentation
+
+- Icône d'application, dans le Dock, le Finder et la fenêtre « À propos ».
+- Icône dédiée dans la barre de menus, rendue en gabarit : elle se teinte avec
+  le thème clair ou sombre et s'inverse quand le menu est ouvert.
+- Pendant une session, l'icône reste affichée et le temps la suit — compte à
+  rebours en Pomodoro, temps écoulé en suivi libre, chiffres à chasse fixe pour
+  que rien ne se déplace de seconde en seconde.
+
 ### Sessions (US2, US4)
 
 - Pomodoro à durée fixe et suivi libre à durée libre, sur une tâche choisie.

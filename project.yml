@@ -48,6 +48,9 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.notitime.app
         PRODUCT_NAME: Notitime
         INFOPLIST_FILE: App/Resources/Info.plist
+        # Icône du Dock, du Finder et de « À propos ». Le catalogue est compilé
+        # en Assets.car ; `CFBundleIconName` doit y renvoyer par le même nom.
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         GENERATE_INFOPLIST_FILE: NO
         ENABLE_HARDENED_RUNTIME: YES
         # Pas de sandbox en v1 : la sandbox n'est pas contournée, elle n'est
