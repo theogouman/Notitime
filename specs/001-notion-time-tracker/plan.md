@@ -16,7 +16,7 @@ Application macOS résidente dans la barre de menus qui lit les tâches d'un wor
 
 **Storage**: SwiftData, magasin local unique dans Application Support. Contenu : cache de tâches et projets, session courante, file d'envoi des entrées de temps, réglages, tâches récentes. Aucun token. Les tokens vivent exclusivement dans le Keychain (`kSecClassGenericPassword`).
 
-**Testing**: XCTest exécuté en CLI sur le package `NotitimeCore` (`swift test`) et sur le schéma applicatif (`xcodebuild test`). Le client Notion est testé contre des réponses enregistrées injectées par un `URLProtocol` de test ; aucun appel réseau réel en CI. Les fonctions serverless ont leurs propres tests avec un Notion simulé.
+**Testing**: XCTest exécuté en CLI sur le package `NotitimeCore` (`swift test`). `scripts/test.sh` enchaîne cette suite puis une **compilation** de la cible applicative par `xcodebuild build` — il n'y a pas de cible de tests applicative, le principe VII n'imposant aucun test SwiftUI et toute la logique testable vivant dans `NotitimeCore`. Le client Notion est testé contre des réponses enregistrées injectées par une implémentation de test du protocole `HTTPTransport` — et non par un `URLProtocol` enregistré globalement, qui imposerait un état partagé et empêcherait la parallélisation. Les fonctions serverless ont leurs propres tests avec un Notion simulé.
 
 **Target Platform**: macOS 14 (Sonoma) et supérieur, Apple Silicon et Intel (binaire universel).
 
@@ -129,9 +129,9 @@ Packages/NotitimeCore/             # Logique métier — sans interface, sans r�
     └── Fixtures/                  # Réponses Notion enregistrées (JSON)
 
 backend/                           # Fonctions serverless Vercel, sans état
-├── api/notion/callback.ts
-├── api/notion/token.ts
-├── api/notion/refresh.ts
+├── api/notion/callback.js         # JS ESM et non TS : Node n'exécute pas TS sans
+├── api/notion/token.js            # transpilation, et ajouter tsc contredirait la
+├── api/notion/refresh.js          # contrainte « aucune dépendance » (portabilité)
 ├── tests/
 ├── package.json
 └── vercel.json
@@ -141,6 +141,14 @@ docs/notion-schema.md              # Schéma attendu des bases Notion
 ```
 
 **Structure Decision**: dépôt unique à trois racines de code. `Packages/NotitimeCore` concentre tout ce qui est testable sans machine réelle et n'importe ni SwiftUI ni AppKit ; il expose quatre protocoles (`TokenStore`, `InactivityMonitor`, `SleepObserver`, `HTTPTransport`) que `App/System/` implémente avec les frameworks système. Cette frontière est ce qui rend le principe VII applicable : les tests injectent une horloge contrôlée, un transport rejouant des fixtures et des sondes système simulées, sans jamais toucher au Keychain, au réseau ni aux événements d'entrée réels. `backend/` est indépendant du code Swift et se déploie séparément.
+
+## Dette technique assumée
+
+**Mode langage Swift 5 sur toolchain 6.3.3.** Le package est déclaré en `swift-tools-version:5.10`, conformément au socle « Swift 5.10 minimum » des contraintes techniques. La toolchain réellement installée est la 6.3.3, mais la déclaration place la compilation en **mode langage Swift 5** : la vérification stricte de la concurrence n'est donc pas appliquée, et les annotations `Sendable` ne sont pas contrôlées par le compilateur.
+
+C'est un choix de vitesse à court terme, pas un oubli. Il a un coût différé identifié : le passage en mode Swift 6 demandera un travail d'annotation `Sendable` concentré sur les trois composants qui partagent de l'état entre tâches concurrentes — la machine à états du timer, le limiteur de débit et l'`Outbox`. Les deux derniers sont déjà des acteurs, ce qui limite l'ampleur ; la machine à états, elle, devra être revue en entier.
+
+À traiter comme une feature à part entière, pas au détour d'une tâche de l'US en cours.
 
 ## Complexity Tracking
 

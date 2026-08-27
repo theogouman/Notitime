@@ -1,0 +1,10 @@
+{
+  "object": "data_source",
+  "id": "ds-tasks-renamed",
+  "title": [{ "plain_text": "Nos chantiers" }],
+  "parent": { "type": "database_id", "database_id": "db-tasks-renamed" },
+  "properties": {
+    "Intitulé":  { "id": "title", "name": "Intitulé",  "type": "title" },
+    "Avancement": { "id": "t-sta", "name": "Avancement", "type": "status" }
+  }
+}

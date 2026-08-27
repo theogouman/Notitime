@@ -1,0 +1,17 @@
+{
+  "object": "data_source",
+  "id": "ds-time-entries",
+  "title": [{ "plain_text": "Time Tracker" }],
+  "parent": { "type": "database_id", "database_id": "db-time-entries" },
+  "properties": {
+    "Nom":      { "id": "title",  "name": "Nom",      "type": "title" },
+    "Tâche":    { "id": "p-task", "name": "Tâche",    "type": "relation" },
+    "Début":    { "id": "p-str",  "name": "Début",    "type": "date" },
+    "Fin":      { "id": "p-end",  "name": "Fin",      "type": "date" },
+    "Durée":    { "id": "p-dur",  "name": "Durée",    "type": "number" },
+    "Type":     { "id": "p-typ",  "name": "Type",     "type": "select" },
+    "Statut":   { "id": "p-sta",  "name": "Statut",   "type": "select" },
+    "Personne": { "id": "p-per",  "name": "Personne", "type": "people" },
+    "ID":       { "id": "p-lid",  "name": "ID",       "type": "rich_text" }
+  }
+}

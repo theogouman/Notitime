@@ -1,0 +1,13 @@
+{
+  "object": "data_source",
+  "id": "ds-tasks",
+  "title": [{ "plain_text": "Tâches" }],
+  "parent": { "type": "database_id", "database_id": "db-tasks" },
+  "properties": {
+    "Nom":      { "id": "title",  "name": "Nom",      "type": "title" },
+    "Statut":   { "id": "t-sta",  "name": "Statut",   "type": "status" },
+    "Personne": { "id": "t-per",  "name": "Personne", "type": "people" },
+    "Projet":   { "id": "t-prj",  "name": "Projet",   "type": "relation" },
+    "Temps total": { "id": "t-rol", "name": "Temps total", "type": "rollup" }
+  }
+}

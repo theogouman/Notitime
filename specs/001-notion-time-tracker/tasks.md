@@ -72,31 +72,31 @@ Trois racines de code, conformément à la décision de structure de `plan.md` :
 
 ### Tests for User Story 1 ⚠️
 
-- [ ] T023 [P] [US1] Écrire les tests des trois routes serverless dans `backend/tests/` : `invalid_verifier`, annulation utilisateur, appel sans paramètre, échange nominal, relais d'un `invalid_grant` (cas de test du contrat OAuth)
-- [ ] T024 [P] [US1] Écrire les tests du validateur de schéma dans `Packages/NotitimeCore/Tests/NotitimeCoreTests/SchemaValidatorTests.swift` avec fixtures de schéma valide et incomplet (US1.3, FR-006)
-- [ ] T025 [P] [US1] Écrire les tests de découverte des rôles dans `Packages/NotitimeCore/Tests/NotitimeCoreTests/DiscoveryTests.swift` : page dupliquée → `child_database` → `data_sources[]` → assignation par schéma (US1.1, FR-004, R-15)
-- [ ] T026 [P] [US1] Écrire le test du cas base multi-sources dans `DiscoveryTests.swift` : plusieurs sources ⇒ demande de choix, jamais d'échec ni de choix d'office (FR-006a)
-- [ ] T027 [P] [US1] Écrire les tests de rafraîchissement et de révocation de token dans `Packages/NotitimeCore/Tests/NotitimeCoreTests/AuthTests.swift` : `401` → refresh → un rejeu ; second `401` → déconnexion sans vider la file (US1.5, FR-002)
+- [X] T023 [P] [US1] Écrire les tests des trois routes serverless dans `backend/tests/` : `invalid_verifier`, annulation utilisateur, appel sans paramètre, échange nominal, relais d'un `invalid_grant` (cas de test du contrat OAuth)
+- [X] T024 [P] [US1] Écrire les tests du validateur de schéma dans `Packages/NotitimeCore/Tests/NotitimeCoreTests/SchemaValidatorTests.swift` avec fixtures de schéma valide et incomplet (US1.3, FR-006)
+- [X] T025 [P] [US1] Écrire les tests de découverte des rôles dans `Packages/NotitimeCore/Tests/NotitimeCoreTests/DiscoveryTests.swift` : page dupliquée → `child_database` → `data_sources[]` → assignation par schéma (US1.1, FR-004, R-15)
+- [X] T026 [P] [US1] Écrire le test du cas base multi-sources dans `DiscoveryTests.swift` : plusieurs sources ⇒ demande de choix, jamais d'échec ni de choix d'office (FR-006a)
+- [X] T027 [P] [US1] Écrire les tests de rafraîchissement et de révocation de token dans `Packages/NotitimeCore/Tests/NotitimeCoreTests/AuthTests.swift` : `401` → refresh → un rejeu ; second `401` → déconnexion sans vider la file (US1.5, FR-002)
 
 ### Implementation for User Story 1
 
-- [ ] T028 [P] [US1] Implémenter `backend/api/notion/callback.ts` : redirection vers `notitime://auth`, aucun appel Notion, aucun log de `code` ni `state`, `Cache-Control: no-store`
-- [ ] T029 [P] [US1] Implémenter `backend/api/notion/token.ts` : vérification `base64url(sha256(verifier)) == state`, échange en Basic auth, relais tel quel du statut et du corps
-- [ ] T030 [P] [US1] Implémenter `backend/api/notion/refresh.ts` : relais de l'échange `refresh_token`, remplacement du couple de tokens côté app
-- [ ] T031 [US1] Implémenter la génération `verifier`/`state` et le flux `ASWebAuthenticationSession` dans `App/Onboarding/OAuthFlow.swift` (`callbackURLScheme: "notitime"`, verifier jamais persisté — contrat OAuth, FR-001)
-- [ ] T032 [US1] Implémenter la persistance de la connexion (Keychain pour les tokens, `NotionConnection` pour le reste) dans `Packages/NotitimeCore/Sources/NotitimeCore/Notion/ConnectionService.swift` (FR-002, FR-003)
-- [ ] T033 [US1] Implémenter le rafraîchissement automatique et la déconnexion sur `invalid_grant` dans `ConnectionService.swift`, sans vider la file d'envoi (US1.5, FR-008)
-- [ ] T034 [US1] Implémenter `NotionClient` — appels de `contracts/notion-api.md`, passage systématique par le `RateLimiter`, classement des réponses — dans `Packages/NotitimeCore/Sources/NotitimeCore/Notion/NotionClient.swift`
-- [ ] T035 [US1] Implémenter la résolution des sources d'une base (`GET /v1/databases/{id}` → `data_sources[]`) dans `NotionClient.swift` (R-01)
-- [ ] T036 [US1] Implémenter `SchemaValidator` (lecture de `properties` sur la source, liste des propriétés manquantes) dans `Packages/NotitimeCore/Sources/NotitimeCore/Notion/SchemaValidator.swift` (FR-006)
-- [ ] T037 [US1] Implémenter la création des propriétés manquantes par `PATCH /v1/data_sources/{id}`, sur acceptation explicite uniquement, dans `SchemaValidator.swift` (FR-006)
-- [ ] T038 [US1] Implémenter `PropertyMapper` (clé logique ↔ propriété, lecture et écriture typées, `id` de propriété comme clé de requête) dans `Packages/NotitimeCore/Sources/NotitimeCore/Notion/PropertyMapper.swift`
-- [ ] T039 [US1] Implémenter la découverte après duplication du template dans `Packages/NotitimeCore/Sources/NotitimeCore/Notion/RoleDiscovery.swift` : assignation par schéma, jamais par titre (FR-004, R-15)
-- [ ] T040 [US1] Implémenter le listage des sources accessibles par `POST /v1/search` filtré sur `data_source` et la pré-sélection par schéma dans `RoleDiscovery.swift` (FR-005)
-- [ ] T041 [US1] Implémenter l'écran de connexion et d'assignation des rôles dans `App/Onboarding/` : liste des sources, choix de source pour une base multi-sources, propriétés manquantes et proposition de création (US1.2, US1.3, FR-006a)
-- [ ] T042 [US1] Implémenter l'affichage de l'état connecté (nom d'utilisateur, workspace, rôles liés) et la déconnexion avec avertissement si des entrées sont en attente dans `App/Onboarding/ConnectionStatusView.swift` (US1.1, FR-008)
-- [ ] T043 [US1] Implémenter la revalidation des rôles au démarrage de l'application — schéma de chaque source liée, routage vers l'écran de re-mapping en cas d'échec — dans `App/Onboarding/StartupValidation.swift` (cas limite « template modifié », FR-006, FR-007)
-- [ ] T044 [US1] Rédiger `docs/notion-schema.md` — schéma attendu des trois bases, conformément à `data-model.md` §2 (exigence du workflow de la constitution)
+- [X] T028 [P] [US1] Implémenter `backend/api/notion/callback.js` : redirection vers `notitime://auth`, aucun appel Notion, aucun log de `code` ni `state`, `Cache-Control: no-store`
+- [X] T029 [P] [US1] Implémenter `backend/api/notion/token.js` : vérification `base64url(sha256(verifier)) == state`, échange en Basic auth, relais tel quel du statut et du corps
+- [X] T030 [P] [US1] Implémenter `backend/api/notion/refresh.js` : relais de l'échange `refresh_token`, remplacement du couple de tokens côté app
+- [X] T031 [US1] Implémenter la génération `verifier`/`state` et le flux `ASWebAuthenticationSession` dans `App/Onboarding/OAuthFlow.swift` (`callbackURLScheme: "notitime"`, verifier jamais persisté — contrat OAuth, FR-001)
+- [X] T032 [US1] Implémenter la persistance de la connexion (Keychain pour les tokens, `NotionConnection` pour le reste) dans `Packages/NotitimeCore/Sources/NotitimeCore/Notion/ConnectionService.swift` (FR-002, FR-003)
+- [X] T033 [US1] Implémenter le rafraîchissement automatique et la déconnexion sur `invalid_grant` dans `ConnectionService.swift`, sans vider la file d'envoi (US1.5, FR-008)
+- [X] T034 [US1] Implémenter `NotionClient` — appels de `contracts/notion-api.md`, passage systématique par le `RateLimiter`, classement des réponses — dans `Packages/NotitimeCore/Sources/NotitimeCore/Notion/NotionClient.swift`
+- [X] T035 [US1] Implémenter la résolution des sources d'une base (`GET /v1/databases/{id}` → `data_sources[]`) dans `NotionClient.swift` (R-01)
+- [X] T036 [US1] Implémenter `SchemaValidator` (lecture de `properties` sur la source, liste des propriétés manquantes) dans `Packages/NotitimeCore/Sources/NotitimeCore/Notion/SchemaValidator.swift` (FR-006)
+- [X] T037 [US1] Implémenter la création des propriétés manquantes par `PATCH /v1/data_sources/{id}`, sur acceptation explicite uniquement, dans `SchemaValidator.swift` (FR-006)
+- [X] T038 [US1] Implémenter `PropertyMapper` (clé logique ↔ propriété, lecture et écriture typées, `id` de propriété comme clé de requête) dans `Packages/NotitimeCore/Sources/NotitimeCore/Notion/PropertyMapper.swift`
+- [X] T039 [US1] Implémenter la découverte après duplication du template dans `Packages/NotitimeCore/Sources/NotitimeCore/Notion/RoleDiscovery.swift` : assignation par schéma, jamais par titre (FR-004, R-15)
+- [X] T040 [US1] Implémenter le listage des sources accessibles par `POST /v1/search` filtré sur `data_source` et la pré-sélection par schéma dans `RoleDiscovery.swift` (FR-005)
+- [X] T041 [US1] Implémenter l'écran de connexion et d'assignation des rôles dans `App/Onboarding/` : liste des sources, choix de source pour une base multi-sources, propriétés manquantes et proposition de création (US1.2, US1.3, FR-006a)
+- [X] T042 [US1] Implémenter l'affichage de l'état connecté (nom d'utilisateur, workspace, rôles liés) et la déconnexion avec avertissement si des entrées sont en attente dans `App/Onboarding/ConnectionStatusView.swift` (US1.1, FR-008)
+- [X] T043 [US1] Implémenter la revalidation des rôles au démarrage de l'application — schéma de chaque source liée, routage vers l'écran de re-mapping en cas d'échec — dans `App/Onboarding/StartupValidation.swift` (cas limite « template modifié », FR-006, FR-007)
+- [X] T044 [US1] Rédiger `docs/notion-schema.md` — schéma attendu des trois bases, conformément à `data-model.md` §2 (exigence du workflow de la constitution)
 
 **Checkpoint**: la connexion et la configuration fonctionnent de bout en bout, indépendamment de toute session.
 
@@ -319,9 +319,9 @@ Task: "Test du cas base multi-sources dans DiscoveryTests.swift"
 Task: "Tests de rafraîchissement et révocation dans AuthTests.swift"
 
 # Les trois routes serverless, en parallèle :
-Task: "Implémenter backend/api/notion/callback.ts"
-Task: "Implémenter backend/api/notion/token.ts"
-Task: "Implémenter backend/api/notion/refresh.ts"
+Task: "Implémenter backend/api/notion/callback.js"
+Task: "Implémenter backend/api/notion/token.js"
+Task: "Implémenter backend/api/notion/refresh.js"
 ```
 
 ---

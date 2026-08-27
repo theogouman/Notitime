@@ -1,0 +1,9 @@
+{
+  "object": "data_source",
+  "id": "ds-projects",
+  "title": [{ "plain_text": "Projets" }],
+  "parent": { "type": "database_id", "database_id": "db-projects" },
+  "properties": {
+    "Nom": { "id": "title", "name": "Nom", "type": "title" }
+  }
+}

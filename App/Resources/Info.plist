@@ -24,6 +24,13 @@
 	<string>14.0</string>
 	<!-- Scheme du callback OAuth. Le backend redirige vers notitime://auth ;
 	     l'app n'ouvre aucun port en écoute (contrats/oauth-backend.md, FR-001). -->
+	<!-- Identifiant public de l'intégration Notion. Ce n'est pas un secret : le
+	     client_secret, lui, ne quitte jamais l'environnement Vercel. À renseigner
+	     avant le premier parcours OAuth. -->
+	<key>NotionClientID</key>
+	<string></string>
+	<key>BackendBaseURL</key>
+	<string>https://auth.notitime.fr</string>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
