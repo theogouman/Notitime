@@ -8,6 +8,16 @@
 
 **Input**: User description: "Application macOS résidant dans la barre de menus qui récupère les tâches Notion de l'utilisateur via OAuth, permet de démarrer des sessions de travail en mode Pomodoro ou en suivi libre sur une tâche donnée, et envoie chaque session comme entrée de temps dans une base Notion afin de centraliser et d'analyser la répartition du temps."
 
+## Clarifications
+
+### Session 2026-08-27
+
+- Q: Par quel mécanisme le code d'autorisation OAuth revient-il de Notion vers l'app dans la barre de menus ? (FR-001) → A: `ASWebAuthenticationSession` ; redirect URI HTTPS vers le service serveur, qui redirige vers le schéma d'URL personnalisé `notitime://oauth-callback` porté par l'app.
+- Q: Comment l'app garantit-elle qu'un réessai ne crée jamais de doublon dans Time Entries ? (FR-028) → A: Vérification systématique avant chaque création : requête sur Time Entries filtrée par « Identifiant local », création seulement si absent (2 requêtes par entrée).
+- Q: Quand un envoi devient-il un échec définitif ? (FR-029, FR-030) → A: Classement par type d'erreur : erreurs permanentes (400, 403, 404) en échec définitif immédiat sans réessai ; erreurs transitoires (réseau, 429, 5xx) réessayées indéfiniment avec backoff plafonné, jamais abandonnées.
+- Q: Jusqu'où va la récupération des tâches mises en cache ? (FR-009) → A: Filtres poussés côté API (statut non terminé + personne courante), pagination suivie jusqu'au bout sans plafond ; la recherche au clavier filtre le cache local sans requête réseau.
+- Q: Quand de l'inactivité est retranchée d'un pomodoro allé jusqu'à zéro, que valent le statut et la durée enregistrés ? (FR-019, FR-024) → A: Toute entrée porte le statut « Complété » ; la valeur « Interrompu » n'est jamais écrite. La durée enregistrée est la durée réellement travaillée, inactivité retranchée. Le motif (arrêt utilisateur, veille, arrêt inopiné, inactivité retranchée) est publié en commentaire Notion sur la page de l'entrée.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Connecter Notion et configurer les bases (Priority: P1)
@@ -87,20 +97,20 @@ Pour un travail dont on ne connaît pas la durée, l'utilisateur choisit une tâ
 
 ### User Story 5 - Interruptions, veille et inactivité (Priority: P2)
 
-Quand un pomodoro est arrêté avant la fin, l'entrée est tout de même envoyée avec la durée réelle et le statut Interrompu, pour que l'historique reste fidèle. La mise en veille du Mac interrompt un pomodoro (l'arrêt est daté au moment de la veille) et met en pause un suivi libre. Si l'utilisateur ne touche plus à son Mac pendant un délai configurable durant un suivi libre, l'app le lui signale à son retour et lui propose de conserver ou de retrancher le temps d'inactivité.
+Quand un pomodoro est arrêté avant la fin, l'entrée est tout de même envoyée avec la durée réellement travaillée, et un commentaire Notion sur la page de l'entrée indique le motif de l'écourtement, pour que l'historique reste fidèle. La mise en veille du Mac interrompt un pomodoro (l'arrêt est daté au moment de la veille) et met en pause un suivi libre. Si l'utilisateur ne touche plus à son Mac pendant un délai configurable durant un suivi libre, l'app le lui signale à son retour et lui propose de conserver ou de retrancher le temps d'inactivité.
 
 **Why this priority**: Sans ces règles, les données Notion sont fausses (temps gonflé par la veille, sessions fantômes) et l'analyse perd son sens.
 
-**Independent Test**: Démarrer un pomodoro de 10 minutes, l'arrêter à 4 minutes, vérifier une entrée de 4 minutes statut Interrompu ; démarrer un suivi libre, laisser le Mac inactif 6 minutes avec seuil à 5, revenir, choisir « retrancher », vérifier la durée finale.
+**Independent Test**: Démarrer un pomodoro de 10 minutes, l'arrêter à 4 minutes, vérifier une entrée de 4 minutes portant un commentaire « arrêt par l'utilisateur » ; démarrer un suivi libre, laisser le Mac inactif 6 minutes avec seuil à 5, revenir, choisir « retrancher », vérifier la durée finale.
 
 **Acceptance Scenarios**:
 
-1. **Given** un pomodoro est en cours depuis 4 minutes sur 25, **When** l'utilisateur arrête, **Then** une entrée de 4 minutes avec statut Interrompu est créée et la série de pomodoros consécutifs est remise à zéro.
+1. **Given** un pomodoro est en cours depuis 4 minutes sur 25, **When** l'utilisateur arrête, **Then** une entrée de 4 minutes au statut « Complété » est créée, un commentaire Notion sur sa page indique « arrêt par l'utilisateur », et la série de pomodoros consécutifs est remise à zéro.
 2. **Given** un pomodoro est en cours depuis moins d'une minute, **When** l'utilisateur arrête, **Then** aucune entrée n'est créée.
-3. **Given** un pomodoro est en cours, **When** le Mac se met en veille, **Then** la session est arrêtée avec fin datée à l'instant de la veille, statut Interrompu, et l'utilisateur en est informé au réveil.
+3. **Given** un pomodoro est en cours, **When** le Mac se met en veille, **Then** la session est arrêtée avec fin datée à l'instant de la veille, l'entrée porte le statut « Complété » avec un commentaire Notion indiquant « mise en veille », et l'utilisateur en est informé au réveil.
 4. **Given** un suivi libre est actif et la détection d'inactivité est activée avec un seuil de 5 minutes, **When** aucun événement d'entrée n'est détecté pendant 5 minutes puis l'utilisateur revient, **Then** l'app lui propose de conserver ou retrancher la durée d'inactivité ; le retrait ajuste la durée de l'entrée finale.
 5. **Given** un pomodoro est en cours et la détection d'inactivité est activée pour le mode Pomodoro (désactivée par défaut), **When** le seuil est dépassé, **Then** le même choix conserver/retrancher est proposé à la fin de la session.
-6. **Given** l'app est fermée ou plante pendant une session, **When** elle est relancée, **Then** la session est retrouvée : un pomodoro est clôturé avec statut Interrompu daté du dernier état connu ; un suivi libre est présenté en pause avec la possibilité de reprendre ou d'arrêter.
+6. **Given** l'app est fermée ou plante pendant une session, **When** elle est relancée, **Then** la session est retrouvée : un pomodoro est clôturé à la date du dernier état connu, son entrée portant le statut « Complété » et un commentaire Notion indiquant « arrêt inopiné de l'application » ; un suivi libre est présenté en pause avec la possibilité de reprendre ou d'arrêter.
 
 ---
 
@@ -158,7 +168,7 @@ L'utilisateur ajuste les durées des pomodoros et des pauses (préréglages 25/5
 
 **Connexion et configuration**
 
-- **FR-001**: L'application MUST s'authentifier auprès de Notion exclusivement par OAuth 2.0 (connexion publique), l'échange du code et le rafraîchissement du token passant par un service serveur sans état qui ne conserve aucune donnée.
+- **FR-001**: L'application MUST s'authentifier auprès de Notion exclusivement par OAuth 2.0 (connexion publique), l'échange du code et le rafraîchissement du token passant par un service serveur sans état qui ne conserve aucune donnée. Le flux d'autorisation MUST se dérouler dans une `ASWebAuthenticationSession` ; l'URL de redirection déclarée dans l'intégration Notion MUST pointer vers le service serveur, qui MUST rediriger vers le schéma d'URL personnalisé `notitime://oauth-callback` porté par l'application ; l'application MUST NOT ouvrir de port en écoute pour recevoir le callback.
 - **FR-002**: L'application MUST stocker le token d'accès et le token de rafraîchissement dans le Keychain macOS et MUST rafraîchir le token d'accès automatiquement avant expiration ou sur rejet.
 - **FR-003**: L'application MUST conserver localement les identifiants de workspace, de bot et d'utilisateur retournés lors de l'autorisation, ainsi que le nom et l'icône du workspace pour affichage.
 - **FR-004**: Lorsque l'autorisation retourne un identifiant de template dupliqué, l'application MUST découvrir automatiquement les bases Projets, Tâches et Time Entries dans la page dupliquée et les assigner à leurs rôles.
@@ -169,11 +179,11 @@ L'utilisateur ajuste les durées des pomodoros et des pauses (préréglages 25/5
 
 **Tâches**
 
-- **FR-009**: L'application MUST récupérer les tâches de la base Tâches et les mettre en cache localement, avec rafraîchissement automatique à intervalle configurable (défaut 5 minutes) et rafraîchissement manuel.
+- **FR-009**: L'application MUST récupérer les tâches de la base Tâches et les mettre en cache localement, avec rafraîchissement automatique à intervalle configurable (défaut 5 minutes) et rafraîchissement manuel. Les filtres (statut non terminé, et personne courante lorsque la propriété Personne est mappée) MUST être poussés dans la requête Notion plutôt qu'appliqués après coup, et la pagination MUST être suivie jusqu'à la dernière page, sans plafond de résultats ni troncature silencieuse.
 - **FR-010**: L'application MUST exclure les tâches dont la propriété Statut a une valeur configurée comme terminée (défaut : les valeurs du groupe « Terminé » de Notion, sinon les valeurs nommées Done/Terminé/Fait).
 - **FR-011**: Si une propriété de type Personne est mappée sur la base Tâches, l'application MUST ne présenter que les tâches contenant l'utilisateur courant, plus les tâches non assignées si le réglage correspondant est activé.
 - **FR-012**: L'application MUST afficher pour chaque tâche le titre et, si disponible, le nom du projet lié.
-- **FR-013**: L'application MUST proposer une recherche textuelle instantanée sur le titre de la tâche et le nom du projet, insensible à la casse et aux accents.
+- **FR-013**: L'application MUST proposer une recherche textuelle instantanée sur le titre de la tâche et le nom du projet, insensible à la casse et aux accents. Cette recherche MUST s'appliquer au cache local et MUST NOT déclencher de requête réseau.
 - **FR-014**: L'application MUST présenter en tête les tâches récemment utilisées (défaut : 5 dernières), quel que soit le filtre courant, tant qu'elles ne sont pas terminées.
 - **FR-015**: L'application MUST exiger qu'une tâche soit sélectionnée avant tout démarrage de session, en mode Pomodoro comme en suivi libre.
 
@@ -182,20 +192,21 @@ L'utilisateur ajuste les durées des pomodoros et des pauses (préréglages 25/5
 - **FR-016**: L'application MUST proposer deux modes de session : Pomodoro (durée fixe avec compte à rebours) et Tracker (durée libre avec chronomètre).
 - **FR-017**: L'application MUST n'autoriser qu'une seule session active à la fois.
 - **FR-018**: En mode Pomodoro, l'application MUST proposer des préréglages (25/5/15 et 50/10/20 minutes, pause longue après 4 pomodoros) et des valeurs personnalisées ; le mode Pomodoro MUST NOT proposer de pause manuelle en cours de session.
-- **FR-019**: En mode Pomodoro, l'application MUST déclarer la session Complétée quand le compte à rebours atteint zéro, et Interrompue si elle est arrêtée avant, par l'utilisateur, par une mise en veille ou par un arrêt inopiné de l'application.
-- **FR-020**: Après un pomodoro complété, l'application MUST proposer une pause (courte, ou longue tous les N pomodoros complétés consécutifs) ; une pause MUST NOT générer d'entrée de temps ; une interruption MUST remettre à zéro le compteur de pomodoros consécutifs.
+- **FR-019**: En mode Pomodoro, l'application MUST considérer localement la session comme allée à son terme quand le compte à rebours atteint zéro, et comme écourtée si elle est arrêtée avant, par l'utilisateur, par une mise en veille ou par un arrêt inopiné de l'application. Ce résultat local pilote la série de pomodoros (FR-020) et le commentaire de FR-026a ; il n'est jamais écrit dans la propriété Statut de Notion, qui vaut toujours « Complété » (FR-026).
+- **FR-020**: Après un pomodoro allé à son terme, l'application MUST proposer une pause (courte, ou longue tous les N pomodoros allés à leur terme consécutivement) ; une pause MUST NOT générer d'entrée de temps ; un pomodoro écourté MUST remettre à zéro le compteur de pomodoros consécutifs, indépendamment du statut « Complété » écrit dans Notion. Le seul retranchement d'une durée d'inactivité sur un pomodoro allé à son terme MUST NOT remettre ce compteur à zéro.
 - **FR-021**: En mode Tracker, l'application MUST permettre pause, reprise et arrêt ; la durée enregistrée MUST exclure les périodes de pause ; une mise en veille MUST mettre la session en pause.
 - **FR-022**: L'application MUST persister l'état de la session courante localement à chaque transition, et MUST restaurer cet état au redémarrage selon les règles de l'US5.
 - **FR-023**: L'application MUST ignorer (ne pas envoyer) toute session dont la durée effective est inférieure à 60 secondes, en informant l'utilisateur.
-- **FR-024**: L'application MUST détecter l'inactivité (absence d'événements clavier/souris système) au-delà d'un seuil configurable (défaut 5 minutes), activée par défaut en mode Tracker et désactivée par défaut en mode Pomodoro, et MUST proposer de conserver ou retrancher la durée d'inactivité avant l'envoi de l'entrée.
+- **FR-024**: L'application MUST détecter l'inactivité (absence d'événements clavier/souris système) au-delà d'un seuil configurable (défaut 5 minutes), activée par défaut en mode Tracker et désactivée par défaut en mode Pomodoro, et MUST proposer de conserver ou retrancher la durée d'inactivité avant l'envoi de l'entrée. La durée envoyée à Notion est dans tous les cas la durée effectivement travaillée après retranchement, y compris lorsqu'elle est ainsi inférieure à la durée cible d'un pomodoro.
 - **FR-025**: L'application MUST afficher dans la barre de menus l'état de la session : temps restant (Pomodoro) ou écoulé (Tracker), et un indicateur de pause ; au repos, uniquement l'icône.
 
 **Entrées de temps**
 
-- **FR-026**: À la fin de toute session éligible, l'application MUST créer exactement une entrée dans la base Time Entries avec : titre généré, relation vers la tâche, début, fin, durée en minutes, type (Pomodoro/Tracker), statut (Complété/Interrompu), personne (utilisateur courant) et identifiant local unique.
+- **FR-026**: À la fin de toute session éligible, l'application MUST créer exactement une entrée dans la base Time Entries avec : titre généré, relation vers la tâche, début, fin, durée en minutes, type (Pomodoro/Tracker), statut (toujours « Complété » : l'application MUST NOT écrire d'autre valeur), personne (utilisateur courant) et identifiant local unique.
+- **FR-026a**: Lorsqu'une session a été écourtée (arrêt par l'utilisateur, mise en veille, arrêt inopiné de l'application) ou qu'une durée d'inactivité a été retranchée, l'application MUST publier un commentaire Notion sur la page de l'entrée créée, indiquant le motif et, le cas échéant, la durée retranchée. L'application MUST NOT publier de commentaire pour une session allée à son terme sans retranchement. Ce commentaire est best-effort : son échec MUST NOT empêcher l'entrée d'être considérée comme envoyée ni la remettre en file d'attente. Sa requête MUST être soumise au limiteur de débit de FR-029. L'intégration OAuth MUST demander la capacité d'insertion de commentaires ; si elle n'est pas accordée, l'application MUST en informer l'utilisateur une seule fois et continuer sans commentaire.
 - **FR-027**: L'application MUST stocker chaque entrée dans une file locale durable avant tentative d'envoi et MUST la retirer uniquement sur confirmation de succès.
-- **FR-028**: L'envoi MUST être idempotent : avant création, l'application MUST vérifier l'absence d'une entrée portant le même identifiant local dans Notion, ou utiliser tout autre mécanisme garantissant l'absence de doublon.
-- **FR-029**: L'application MUST réessayer les envois échoués avec un délai croissant, respecter les indications de limitation de débit de Notion, et MUST limiter son propre débit à 3 requêtes par seconde.
+- **FR-028**: L'envoi MUST être idempotent : avant chaque création, l'application MUST interroger la base Time Entries filtrée sur la propriété « Identifiant local » et MUST ne créer la page que si aucune entrée ne porte cet identifiant. Cette vérification MUST avoir lieu à chaque tentative d'envoi, y compris la première ; les deux requêtes (vérification puis création) MUST être soumises au limiteur de débit de FR-029.
+- **FR-029**: L'application MUST classer les échecs d'envoi en deux familles. Les erreurs transitoires (absence de réseau, délai dépassé, 429, 5xx) MUST être réessayées indéfiniment avec un délai croissant plafonné et MUST NOT conduire à abandonner l'entrée, quelle que soit la durée de l'indisponibilité ; l'application MUST respecter le `Retry-After` renvoyé par Notion. Les erreurs permanentes (400 de validation, 403 permissions retirées, 404 base ou tâche introuvable) MUST marquer l'entrée en échec définitif dès la première occurrence, sans réessai. Dans tous les cas, l'application MUST limiter son propre débit à 3 requêtes par seconde.
 - **FR-030**: L'application MUST afficher le nombre d'entrées en attente et, pour une entrée en échec définitif, la cause et une action de résolution.
 - **FR-031**: L'application MUST permettre de réassigner une entrée en échec à une autre tâche avant renvoi.
 
@@ -213,7 +224,7 @@ L'utilisateur ajuste les durées des pomodoros et des pauses (préréglages 25/5
 
 - **Configuration des bases** : pour chaque rôle (Projets, Tâches, Time Entries), l'identifiant de la base et le mapping nom → propriété. Propriétés requises :
   - Tâches : Titre (title) ; Statut (status ou select) ; optionnels mappables : Personne (people), Projet (relation vers Projets).
-  - Time Entries : Titre (title) ; Tâche (relation vers Tâches) ; Début (date) ; Fin (date) ; Durée (number, minutes) ; Type (select : Pomodoro, Tracker) ; Statut (select : Complété, Interrompu) ; Personne (people) ; Identifiant local (rich text, pour l'idempotence).
+  - Time Entries : Titre (title) ; Tâche (relation vers Tâches) ; Début (date) ; Fin (date) ; Durée (number, minutes) ; Type (select : Pomodoro, Tracker) ; Statut (select : Complété — seule valeur écrite par l'application en v1) ; Personne (people) ; Identifiant local (rich text, pour l'idempotence).
   - Projets (optionnel) : Titre (title).
   Le template fournit en plus des rollups Notion (temps total par tâche, par projet) que l'application ne lit pas.
 
@@ -221,7 +232,7 @@ L'utilisateur ajuste les durées des pomodoros et des pauses (préréglages 25/5
 
 - **Tâche** : entrée de la base Tâches. Attributs : identifiant, titre, statut, personnes assignées, projet lié, date de dernière utilisation locale (pour les récentes). Lue, jamais modifiée par l'application.
 
-- **Session** : unité de travail locale en cours ou terminée. Attributs : identifiant local unique, tâche, mode (Pomodoro/Tracker), durée cible (Pomodoro), début, fin, durée effective, périodes de pause, périodes d'inactivité détectées, résultat (Complétée/Interrompue/Ignorée), cause d'interruption (utilisateur, veille, arrêt inopiné). Une session terminée éligible produit exactement une Entrée de temps.
+- **Session** : unité de travail locale en cours ou terminée. Attributs : identifiant local unique, tâche, mode (Pomodoro/Tracker), durée cible (Pomodoro), début, fin, durée effective, périodes de pause, périodes d'inactivité détectées, résultat local (Allée à son terme/Écourtée/Ignorée) et cause d'écourtement (utilisateur, veille, arrêt inopiné) — ces deux attributs restent locaux, pilotent la série de pomodoros et le commentaire de FR-026a, et ne sont jamais écrits dans la propriété Statut de Notion. Une session terminée éligible produit exactement une Entrée de temps.
 
 - **Entrée de temps** : représentation locale d'une ligne de la base Time Entries. Attributs : ceux de FR-026 plus l'état d'envoi (en attente, envoyée, échec avec cause), le nombre de tentatives et la date de prochaine tentative.
 
