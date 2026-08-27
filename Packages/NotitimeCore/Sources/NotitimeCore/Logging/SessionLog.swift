@@ -13,7 +13,7 @@ import os
 public actor SessionLog {
 
     public enum Category: String, Sendable {
-        case session, sync, auth, error
+        case app, session, sync, auth, error
     }
 
     public static let maxFileBytes = 2 * 1024 * 1024

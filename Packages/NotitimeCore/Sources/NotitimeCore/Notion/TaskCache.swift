@@ -2,8 +2,12 @@ import Foundation
 
 /// Réglages du filtrage des tâches (FR-010, FR-011, FR-014).
 public struct TaskFilterSettings: Sendable, Equatable {
-    /// Valeurs de statut considérées comme terminées. Configurables : chaque
-    /// équipe nomme ses états autrement.
+    /// Valeurs de statut à exclure **en plus** du groupe « terminé » du schéma.
+    ///
+    /// Vide par défaut, et c'est voulu : le schéma sait déjà ce qu'être terminé
+    /// signifie dans cette base. Ce réglage sert aux cas qu'il ne couvre pas —
+    /// une propriété `select`, qui n'a pas de groupes, ou une équipe qui range
+    /// « À valider » parmi les tâches à ne plus proposer.
     public var doneStatusValues: [String] = []
     /// Utilisateur courant, pour le filtre Personne. `nil` désactive le filtre.
     public var currentUserID: String?
@@ -85,9 +89,9 @@ public actor TaskCache {
 
         // Un `and` de `does_not_equal` plutôt qu'un `nin` : la propriété peut
         // être un `status` ou un `select`, et le conteneur diffère.
-        if let reference = mapper.reference(.taskStatus), !settings.doneStatusValues.isEmpty {
+        if let reference = mapper.reference(.taskStatus) {
             let container = reference.type == "status" ? "status" : "select"
-            for value in settings.doneStatusValues {
+            for value in TaskCache.doneValues(for: reference, adding: settings.doneStatusValues) {
                 clauses.append(["property": reference.name,
                                 container: ["does_not_equal": value]])
             }
@@ -107,6 +111,24 @@ public actor TaskCache {
 
         guard !clauses.isEmpty else { return nil }
         return clauses.count == 1 ? clauses[0] : ["and": clauses]
+    }
+
+    /// Ce qui compte comme terminé : le groupe « terminé » du schéma, plus les
+    /// valeurs ajoutées par l'utilisateur.
+    ///
+    /// **Filtré par les options réellement déclarées.** Notion rejette la requête
+    /// entière — pas seulement la clause fautive — dès qu'une valeur lui est
+    /// inconnue : un seul libellé périmé dans les réglages, et plus aucune tâche
+    /// ne se charge. Une valeur qui n'existe pas n'a de toute façon aucune tâche
+    /// à exclure, la retirer ne change donc rien au résultat.
+    static func doneValues(for reference: PropertyRef, adding extra: [String]) -> [String] {
+        let declared = Set(reference.options)
+        var kept: [String] = []
+        for value in reference.completeOptions + extra where !kept.contains(value) {
+            guard declared.isEmpty || declared.contains(value) else { continue }
+            kept.append(value)
+        }
+        return kept
     }
 
     private func item(from page: NotionPage) -> CachedTaskItem? {

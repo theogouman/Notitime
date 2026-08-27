@@ -452,13 +452,22 @@ final class SessionController: ObservableObject {
         let mapper = PropertyMapper(map: binding.propertyRefs)
         let titles = Dictionary(tasks.map { ($0.id, $0.title) }, uniquingKeysWith: { first, _ in first })
 
-        return EntryComposer(mapper: mapper,
-                             dataSourceID: binding.dataSourceID,
-                             personUserID: connection.ownerUserID,
-                             // Les options réelles du statut : un `status`
-                             // n'accepte rien d'autre (FR-026).
-                             statusOptions: mapper.reference(.entryStatus)?.options ?? [],
-                             taskTitleLookup: { titles[$0] })
+        let composer = EntryComposer(mapper: mapper,
+                                     dataSourceID: binding.dataSourceID,
+                                     personUserID: connection.ownerUserID,
+                                     taskTitleLookup: { titles[$0] })
+        // Une entrée écrite sans statut doit être explicable : c'est que les
+        // options de la base ne savent pas exprimer ce résultat.
+        let unexpressible = composer.unexpressibleOutcomes()
+        if !unexpressible.isEmpty {
+            let names = unexpressible.map(\.rawValue).joined(separator: ", ")
+            let options = mapper.reference(.entryStatus)?.options.joined(separator: ", ") ?? ""
+            Task { [log = environment.log] in
+                await log.log(.sync, "statut non exprimable pour \(names) — "
+                              + "options de la base : \(options)")
+            }
+        }
+        return composer
     }
 
     // MARK: - Drain de la file (US6)

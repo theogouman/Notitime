@@ -13,19 +13,22 @@ final class OutboxTests: XCTestCase {
                      rateLimiter: .forTesting(VirtualTimeSource()))
     }
 
-    private func composer(statusOptions: [String] = []) -> EntryComposer {
+    private func composer(statusOptions: [String] = ["À lancer", "En cours",
+                                                     "Terminée", "Interrompue"]) -> EntryComposer {
         EntryComposer(mapper: PropertyMapper(map: [
             .entryTitle: PropertyRef(id: "title", name: "Name", type: "title"),
             .entryTask: PropertyRef(id: "p-task", name: "Tâches", type: "relation"),
             .entryStart: PropertyRef(id: "p-str", name: "Date de début", type: "date"),
             .entryEnd: PropertyRef(id: "p-end", name: "Date de fin", type: "date"),
             .entryDuration: PropertyRef(id: "p-dur", name: "Durée en min", type: "number"),
-            .entryType: PropertyRef(id: "p-met", name: "Méthode", type: "select"),
-            .entryStatus: PropertyRef(id: "p-sta", name: "Status", type: "status"),
+            .entryType: PropertyRef(id: "p-met", name: "Méthode", type: "select",
+                                    options: ["Time Tracker", "Pomodoro"]),
+            .entryStatus: PropertyRef(id: "p-sta", name: "Status", type: "status",
+                                      options: statusOptions),
             .entryPerson: PropertyRef(id: "p-per", name: "Responsable", type: "people"),
             .entryLocalID: PropertyRef(id: "p-lid", name: "ID", type: "rich_text")
         ]), dataSourceID: "ds-time-entries", personUserID: "user-1",
-            statusOptions: statusOptions, taskTitleLookup: { _ in "Refonte facturation" })
+            taskTitleLookup: { _ in "Refonte facturation" })
     }
 
     private func entry(outcome: SessionOutcome = .ranToTerm,

@@ -119,8 +119,8 @@ struct SettingsView: View {
                     value: Binding(get: { settings.taskRefreshIntervalMinutes },
                                    set: { settings.taskRefreshIntervalMinutes = $0; propagate() }),
                     in: 1...120)
-            LabeledContent("Statuts considérés terminés") {
-                TextField("Terminé, Fait…", text: Binding(
+            LabeledContent("Statuts à exclure en plus") {
+                TextField("laissez vide : le schéma décide", text: Binding(
                     get: { settings.doneStatusValues.joined(separator: ", ") },
                     set: {
                         settings.doneStatusValues = $0.split(separator: ",")
@@ -129,6 +129,11 @@ struct SettingsView: View {
                         propagate()
                     }))
             }
+            Text("Les statuts du groupe « terminé » de votre base sont déjà exclus. "
+                 + "N'ajoutez ici que les autres — « À valider », par exemple. "
+                 + "Un statut inconnu de la base est ignoré.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
     }
 

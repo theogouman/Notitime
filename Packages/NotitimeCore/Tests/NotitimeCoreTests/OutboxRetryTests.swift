@@ -139,6 +139,39 @@ final class OutboxRetryTests: XCTestCase {
         XCTAssertEqual(creations, 0)
     }
 
+    /// Le sondage de la corbeille est **auxiliaire**. S'il est refusé
+    /// définitivement — un paramètre que cette version de l'API n'accepte pas —
+    /// l'entrée doit tout de même partir : la première interrogation a déjà
+    /// prouvé qu'aucune page vivante ne porte cet identifiant. Bloquer
+    /// indéfiniment perdrait la session, ce que le principe IV interdit.
+    func testRejectedArchiveProbeDoesNotBlockTheSendForever() async throws {
+        let transport = FixtureTransport()
+        await transport.enqueue(.post, queryPath, status: 200, json: #"{"results":[],"has_more":false}"#)
+        await transport.enqueue(.post, queryPath, status: 400,
+                                json: #"{"object":"error","code":"validation_error","message":"body failed validation"}"#)
+        await transport.enqueue(.post, NotionAPI.Path.pages, status: 200,
+                                json: #"{"object":"page","id":"page-1"}"#)
+
+        let result = await makeOutbox(transport).send(entry(), afterAttempt: .indeterminate)
+
+        XCTAssertEqual(result, .sent(pageID: "page-1"))
+    }
+
+    /// En revanche une panne **transitoire** sur ce même sondage diffère :
+    /// l'incertitude peut se lever au prochain essai, rien ne presse.
+    func testTransientArchiveProbeFailureStillDefers() async throws {
+        struct Offline: Error {}
+        let transport = FixtureTransport()
+        await transport.enqueue(.post, queryPath, status: 200, json: #"{"results":[],"has_more":false}"#)
+        await transport.enqueue(.post, queryPath, .failure(Offline()))
+
+        let result = await makeOutbox(transport).send(entry(), afterAttempt: .indeterminate)
+
+        guard case .retryLater = result else { return XCTFail("obtenu \(result)") }
+        let creations = await transport.requestCount(.post, NotionAPI.Path.pages)
+        XCTAssertEqual(creations, 0)
+    }
+
     // MARK: - T088 : classement des erreurs
 
     func testPermanentStatusesFailImmediately() async throws {

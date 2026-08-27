@@ -15,6 +15,11 @@ final class AppEnvironment: ObservableObject {
     let connection: ConnectionService
     let notion: NotionClient
 
+    /// Version courte du bundle, pour le repère de lancement du journal.
+    static var shortVersion: String {
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
+    }
+
     init() throws {
         container = try NotitimeStore.makeContainer()
         time = SystemTimeSource()

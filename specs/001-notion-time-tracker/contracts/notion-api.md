@@ -26,7 +26,19 @@ Liste close des appels que `NotitimeCore` adresse à Notion. Tout appel hors de 
 
 Le filtre de l'interrogation des tâches porte le statut non terminé et, quand la propriété Personne est mappée, l'utilisateur courant — poussés côté API et non appliqués après coup (FR-009). La pagination se suit par `start_cursor` / `page_size` en requête et `has_more` / `next_cursor` en réponse, jusqu'à épuisement, sans plafond.
 
-**Archivage, corbeille et idempotence.** `is_archived` et `in_trash` sont deux notions distinctes : `is_archived` marque une page archivée et est le seul sélecteur accepté en corps de requête d'interrogation (défaut faux) ; `in_trash` marque la mise en corbeille et n'est pas interrogeable. Conséquences pour la vérification d'idempotence : une entrée seulement **archivée** doit compter comme existante, d'où la double interrogation ci-dessus, sans quoi un réessai la recréerait. Une entrée mise en **corbeille** est invisible à l'interrogation et ne peut pas être détectée — voir la limite bornée documentée en R-06.
+**Le vocabulaire vient du schéma, jamais du code.** Aucun libellé d'option n'est
+écrit en dur, ni pour filtrer ni pour écrire. Ce qui compte comme « terminé » est
+le groupe `complete` de la propriété `status` — trois groupes, dans l'ordre à
+faire, en cours, terminé, ni ajoutables ni réordonnables par l'API, mais
+renommables dans l'interface : la reconnaissance passe par le nom, puis par la
+position. Ce qui est écrit dans un `select` ou un `status` est d'abord projeté
+sur les options déclarées. Une valeur inconnue de la base n'est jamais envoyée :
+un `status` la refuserait en 400 — et Notion rejette alors le corps **entier**,
+pas seulement la clause fautive —, un `select` l'accepterait en créant un doublon
+silencieux. Quand un `status` ne peut exprimer un résultat, la propriété est omise
+et le journal le dit : une entrée sans statut vaut mieux qu'une entrée refusée.
+
+**Archivage, corbeille et idempotence.** `is_archived` et `in_trash` sont deux notions distinctes : `is_archived` marque une page archivée et est le seul sélecteur accepté en corps de requête d'interrogation (défaut faux) ; `in_trash` marque la mise en corbeille et n'est pas interrogeable. Conséquences pour la vérification d'idempotence : une entrée seulement **archivée** doit compter comme existante, d'où la double interrogation ci-dessus, sans quoi un réessai la recréerait. La seconde interrogation est toutefois **auxiliaire** : si l'API la refuse définitivement, l'entrée est créée malgré tout et le journal le signale — la retenir indéfiniment perdrait la session, ce que le principe IV interdit. Une entrée mise en **corbeille** est invisible à l'interrogation et ne peut pas être détectée — voir la limite bornée documentée en R-06.
 
 Les éléments dont `in_trash` est vrai sont exclus. Ce champ s'appelait `archived` avant `2026-03-11`, où il a été renommé sur les pages, bases, blocs et sources ; `archived` subsiste comme alias déprécié et ne doit pas être utilisé.
 

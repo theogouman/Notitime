@@ -16,18 +16,13 @@
       "name": "Name",
       "type": "title"
     },
-    "Tâches": {
-      "id": "p-task",
-      "name": "Tâches",
-      "type": "relation"
-    },
     "Date de début": {
-      "id": "p-str",
+      "id": "p-deb",
       "name": "Date de début",
       "type": "date"
     },
     "Date de fin": {
-      "id": "p-end",
+      "id": "p-fin",
       "name": "Date de fin",
       "type": "date"
     },
@@ -43,31 +38,14 @@
       "select": {
         "options": [
           {
-            "name": "Time Tracker"
+            "id": "o-1",
+            "name": "Time Tracker",
+            "color": "default"
           },
           {
-            "name": "Pomodoro"
-          }
-        ]
-      }
-    },
-    "Status": {
-      "id": "p-sta",
-      "name": "Status",
-      "type": "status",
-      "status": {
-        "options": [
-          {
-            "name": "À lancer"
-          },
-          {
-            "name": "En cours"
-          },
-          {
-            "name": "Terminée"
-          },
-          {
-            "name": "Interrompue"
+            "id": "o-2",
+            "name": "Pomodoro",
+            "color": "default"
           }
         ]
       }
@@ -76,6 +54,67 @@
       "id": "p-per",
       "name": "Responsable",
       "type": "people"
+    },
+    "Status": {
+      "id": "p-sta",
+      "name": "Status",
+      "type": "status",
+      "status": {
+        "options": [
+          {
+            "id": "o-1",
+            "name": "À lancer",
+            "color": "default"
+          },
+          {
+            "id": "o-2",
+            "name": "En cours",
+            "color": "default"
+          },
+          {
+            "id": "o-3",
+            "name": "Interrompue",
+            "color": "default"
+          },
+          {
+            "id": "o-4",
+            "name": "Terminée",
+            "color": "default"
+          }
+        ],
+        "groups": [
+          {
+            "id": "g-To-do",
+            "name": "To-do",
+            "color": "default",
+            "option_ids": [
+              "o-1"
+            ]
+          },
+          {
+            "id": "g-In progress",
+            "name": "In progress",
+            "color": "default",
+            "option_ids": [
+              "o-2"
+            ]
+          },
+          {
+            "id": "g-Complete",
+            "name": "Complete",
+            "color": "default",
+            "option_ids": [
+              "o-3",
+              "o-4"
+            ]
+          }
+        ]
+      }
+    },
+    "Tâches": {
+      "id": "p-tac",
+      "name": "Tâches",
+      "type": "relation"
     },
     "ID": {
       "id": "p-lid",

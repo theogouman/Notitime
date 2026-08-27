@@ -168,8 +168,8 @@ final class PublishedTemplateSchemaTests: XCTestCase {
         let map = try map("data_source_published_template_time_tracker", as: .timeEntries)
 
         XCTAssertNotEqual(map[.entryStart]?.id, map[.entryEnd]?.id)
-        XCTAssertEqual(map[.entryStart]?.id, "p-str")
-        XCTAssertEqual(map[.entryEnd]?.id, "p-end")
+        XCTAssertEqual(map[.entryStart]?.id, "p-deb")
+        XCTAssertEqual(map[.entryEnd]?.id, "p-fin")
     }
 
     /// Ces sources satisfont aussi le rôle Projets, qui n'exige qu'un titre :
@@ -198,7 +198,10 @@ final class StatusOptionsTests: XCTestCase {
         }
 
         XCTAssertEqual(map[.entryStatus]?.options,
-                       ["À lancer", "En cours", "Terminée", "Interrompue"])
+                       ["À lancer", "En cours", "Interrompue", "Terminée"])
         XCTAssertEqual(map[.entryType]?.options, ["Time Tracker", "Pomodoro"])
+        // Le groupe « terminé » du schéma, sans lequel le filtre des tâches
+        // devrait deviner ce que « terminé » veut dire dans cette base.
+        XCTAssertEqual(map[.entryStatus]?.completeOptions, ["Interrompue", "Terminée"])
     }
 }

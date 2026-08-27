@@ -12,6 +12,10 @@ Comportements visibles par l'utilisateur, dans l'ordre des livraisons.
 - Reconnaissance par schéma et non par nom : une base renommée reste reconnue,
   et les noms du template diffusé (« Status », « Date de début », « Méthode »)
   sont compris au même titre que ceux de la documentation.
+- Les statuts considérés terminés sont lus dans la base — le groupe « terminé »
+  de la propriété, quels que soient ses libellés — au lieu d'être devinés. Le
+  réglage ne sert plus qu'à en ajouter d'autres, et un statut inconnu de la base
+  est ignoré au lieu de faire échouer le chargement des tâches.
 - Désignation manuelle des bases quand la détection ne trouve rien, avec une
   explication et un recours à chaque étape plutôt qu'un écran vide.
 - Connexion et réglages dans une fenêtre dédiée ; le menu reste réservé à
@@ -28,6 +32,12 @@ Comportements visibles par l'utilisateur, dans l'ordre des livraisons.
 - Son de fin de session, et notification système lorsque macOS l'autorise.
 
 ### Entrées de temps (US2, US6)
+
+- La méthode et le statut écrits dans Time Tracker sont projetés sur les options
+  réelles de la base : « Time Tracker » plutôt qu'une option « Tracker » créée
+  au passage, « Terminée » plutôt que « Complété ». Quand aucune option ne
+  convient à un statut, la propriété est omise et le journal l'explique — une
+  entrée sans statut vaut mieux qu'une entrée refusée.
 
 - Chaque session éligible produit une entrée dans la base Time Entries : titre
   généré, tâche liée, début, fin, durée, méthode, statut et responsable.

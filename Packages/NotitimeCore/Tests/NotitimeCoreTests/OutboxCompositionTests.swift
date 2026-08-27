@@ -13,15 +13,19 @@ final class OutboxCompositionTests: XCTestCase {
     private let taskPage = "task-page-1"
 
     /// Mapping du template diffusé, noms réels compris.
-    private func mapper(entryStatusType: String = "status") -> PropertyMapper {
+    private func mapper(entryStatusType: String = "status",
+                        statusOptions: [String] = ["À lancer", "En cours",
+                                                   "Terminée", "Interrompue"]) -> PropertyMapper {
         PropertyMapper(map: [
             .entryTitle: PropertyRef(id: "title", name: "Name", type: "title"),
             .entryTask: PropertyRef(id: "p-task", name: "Tâches", type: "relation"),
             .entryStart: PropertyRef(id: "p-str", name: "Date de début", type: "date"),
             .entryEnd: PropertyRef(id: "p-end", name: "Date de fin", type: "date"),
             .entryDuration: PropertyRef(id: "p-dur", name: "Durée en min", type: "number"),
-            .entryType: PropertyRef(id: "p-met", name: "Méthode", type: "select"),
-            .entryStatus: PropertyRef(id: "p-sta", name: "Status", type: entryStatusType),
+            .entryType: PropertyRef(id: "p-met", name: "Méthode", type: "select",
+                                    options: ["Time Tracker", "Pomodoro"]),
+            .entryStatus: PropertyRef(id: "p-sta", name: "Status", type: entryStatusType,
+                                      options: statusOptions),
             .entryPerson: PropertyRef(id: "p-per", name: "Responsable", type: "people"),
             .entryLocalID: PropertyRef(id: "p-lid", name: "ID", type: "rich_text")
         ])
@@ -145,10 +149,8 @@ final class OutboxCompositionTests: XCTestCase {
     /// volée : écrire « Complété » y échouerait en 400. Le résultat de session se
     /// projette donc sur les options réellement présentes.
     func testOutcomeMapsOntoTheExistingStatusOptions() throws {
-        let options = ["À lancer", "En cours", "Terminée", "Interrompue"]
         let composer = EntryComposer(mapper: mapper(), dataSourceID: "ds",
                                      personUserID: "user-1",
-                                     statusOptions: options,
                                      taskTitleLookup: { _ in "T" })
 
         let done = try XCTUnwrap(statusName(composer, outcome: .ranToTerm))
@@ -161,9 +163,9 @@ final class OutboxCompositionTests: XCTestCase {
     /// Sans option connue — cas d'un `select`, où Notion crée l'option — les
     /// valeurs canoniques de la spec sont écrites telles quelles.
     func testOutcomeFallsBackToTheCanonicalValues() throws {
-        let composer = EntryComposer(mapper: mapper(entryStatusType: "select"),
+        let composer = EntryComposer(mapper: mapper(entryStatusType: "select", statusOptions: []),
                                      dataSourceID: "ds", personUserID: "user-1",
-                                     statusOptions: [], taskTitleLookup: { _ in "T" })
+                                     taskTitleLookup: { _ in "T" })
 
         XCTAssertEqual(statusName(composer, outcome: .ranToTerm), "Complété")
         XCTAssertEqual(statusName(composer, outcome: .shortened), "Écourté")
@@ -180,8 +182,11 @@ final class OutboxCompositionTests: XCTestCase {
         XCTAssertNil(status["select"])
     }
 
+    /// La méthode se projette elle aussi sur les options de la base : l'option
+    /// du template s'appelle « Time Tracker », et écrire « Tracker » y créerait
+    /// un doublon silencieux — un `select` accepte toute valeur neuve.
     func testMethodCarriesTheSessionMode() throws {
-        for (mode, expected) in [(SessionMode.pomodoro, "Pomodoro"), (.tracker, "Tracker")] {
+        for (mode, expected) in [(SessionMode.pomodoro, "Pomodoro"), (.tracker, "Time Tracker")] {
             let entry = composer().compose(session(mode: mode))
             let properties = try XCTUnwrap(composer().pageBody(for: entry)["properties"] as? [String: Any])
             let method = try XCTUnwrap(properties["Méthode"] as? [String: Any])

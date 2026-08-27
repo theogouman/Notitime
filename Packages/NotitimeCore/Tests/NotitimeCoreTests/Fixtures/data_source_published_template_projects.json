@@ -1,13 +1,105 @@
 {
   "object": "data_source",
   "id": "ds-tpl-projects",
-  "title": [{ "plain_text": "Projets" }],
-  "parent": { "type": "database_id", "database_id": "db-tpl-projects" },
+  "title": [
+    {
+      "plain_text": "Projets"
+    }
+  ],
+  "parent": {
+    "type": "database_id",
+    "database_id": "db-tpl-projects"
+  },
   "properties": {
-    "Name":     { "id": "title", "name": "Name",     "type": "title" },
-    "Status":   { "id": "p-sta", "name": "Status",   "type": "status" },
-    "Type":     { "id": "p-typ", "name": "Type",     "type": "select" },
-    "Deadline": { "id": "p-dl",  "name": "Deadline", "type": "date" },
-    "Tâches":   { "id": "p-tsk", "name": "Tâches",   "type": "relation" }
+    "Name": {
+      "id": "title",
+      "name": "Name",
+      "type": "title"
+    },
+    "Status": {
+      "id": "p-sta",
+      "name": "Status",
+      "type": "status",
+      "status": {
+        "options": [
+          {
+            "id": "o-1",
+            "name": "Backlog",
+            "color": "default"
+          },
+          {
+            "id": "o-2",
+            "name": "En cours",
+            "color": "default"
+          },
+          {
+            "id": "o-3",
+            "name": "Annulé",
+            "color": "default"
+          },
+          {
+            "id": "o-4",
+            "name": "Terminé",
+            "color": "default"
+          }
+        ],
+        "groups": [
+          {
+            "id": "g-To-do",
+            "name": "To-do",
+            "color": "default",
+            "option_ids": [
+              "o-1"
+            ]
+          },
+          {
+            "id": "g-In progress",
+            "name": "In progress",
+            "color": "default",
+            "option_ids": [
+              "o-2"
+            ]
+          },
+          {
+            "id": "g-Complete",
+            "name": "Complete",
+            "color": "default",
+            "option_ids": [
+              "o-3",
+              "o-4"
+            ]
+          }
+        ]
+      }
+    },
+    "Type": {
+      "id": "p-typ",
+      "name": "Type",
+      "type": "select",
+      "select": {
+        "options": [
+          {
+            "id": "o-1",
+            "name": "Projet personnel",
+            "color": "default"
+          },
+          {
+            "id": "o-2",
+            "name": "Projet client",
+            "color": "default"
+          }
+        ]
+      }
+    },
+    "Tâches": {
+      "id": "p-tac",
+      "name": "Tâches",
+      "type": "relation"
+    },
+    "Deadline": {
+      "id": "p-dl",
+      "name": "Deadline",
+      "type": "date"
+    }
   }
 }

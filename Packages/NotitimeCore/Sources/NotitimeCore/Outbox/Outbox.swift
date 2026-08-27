@@ -119,6 +119,16 @@ public actor Outbox {
                     keepingTrashed: includeArchived
                 )
                 if let found = page.results.first { return .found(found.id) }
+            } catch let error as NotionError where includeArchived && error.responseClass.provesNoSideEffect {
+                // Le sondage des archives est auxiliaire : la première
+                // interrogation a déjà prouvé qu'aucune page vivante ne porte cet
+                // identifiant. Un refus **définitif** ici — un paramètre que
+                // l'API n'accepte pas — ne doit pas retenir l'entrée pour
+                // toujours : le principe IV passe avant la fenêtre de doublon
+                // bornée que R-06 documente déjà.
+                await log?.log(.sync, "sondage des archives refusé : \(error.message ?? "") — "
+                               + "création malgré tout, doublon possible si l'entrée y était archivée")
+                return .absent
             } catch {
                 return .unknown("\(error)")
             }

@@ -24,16 +24,25 @@ public struct NotionPropertySchema: Codable, Sendable {
     public let type: NotionPropertyType
     /// Options déclarées, pour un `select` ou un `status`.
     public let options: [String]
+    /// Options du groupe « terminé » d'un `status`, dans l'ordre du schéma.
+    ///
+    /// C'est le schéma qui dit ce qu'« être terminé » veut dire dans cette base :
+    /// « Terminé » et « Annulé » ici, autre chose ailleurs. Un `select` n'a pas
+    /// de groupes et rend donc une liste vide.
+    public let completeOptions: [String]
 
     public var reference: PropertyRef {
-        PropertyRef(id: id, name: name, type: type.rawValue, options: options)
+        PropertyRef(id: id, name: name, type: type.rawValue,
+                    options: options, completeOptions: completeOptions)
     }
 
-    public init(id: String, name: String, type: NotionPropertyType, options: [String] = []) {
+    public init(id: String, name: String, type: NotionPropertyType,
+                options: [String] = [], completeOptions: [String] = []) {
         self.id = id
         self.name = name
         self.type = type
         self.options = options
+        self.completeOptions = completeOptions
     }
 
     private enum CodingKeys: String, CodingKey { case id, name, type }
@@ -45,15 +54,39 @@ public struct NotionPropertySchema: Codable, Sendable {
         type = try container.decode(NotionPropertyType.self, forKey: .type)
 
         // Les options vivent sous une clé qui porte le nom du type — `select`
-        // ou `status` —, et un `status` les groupe en plus par avancement. On
-        // ne retient que la liste plate : seule la valeur écrite compte.
+        // ou `status` —, et un `status` les groupe en plus par avancement.
         let dynamic = try decoder.container(keyedBy: DynamicKey.self)
         if let key = DynamicKey(stringValue: type.rawValue),
            let holder = try? dynamic.decode(OptionHolder.self, forKey: key) {
-            options = holder.options?.map(\.name) ?? []
+            let declared = holder.options ?? []
+            options = declared.map(\.name)
+            completeOptions = NotionPropertySchema.complete(of: holder.groups, among: declared)
         } else {
             options = []
+            completeOptions = []
         }
+    }
+
+    /// Retrouve le groupe « terminé » parmi les trois groupes d'un `status`.
+    ///
+    /// Deux voies, dans cet ordre. Le nom d'abord, parce qu'il est explicite —
+    /// mais il est renommable dans l'interface Notion et n'est pas traduit de
+    /// façon prévisible, donc il ne peut pas être le seul recours. La position
+    /// ensuite : Notion impose exactement trois groupes, dans l'ordre à faire,
+    /// en cours, terminé, et l'API ne permet ni d'en ajouter ni de les réordonner.
+    static func complete(of groups: [OptionHolder.Group]?,
+                         among options: [OptionHolder.Option]) -> [String] {
+        guard let groups, !groups.isEmpty else { return [] }
+        let hints = ["complete", "complété", "complet", "terminé", "termine",
+                     "fini", "achevé", "done", "closed"]
+
+        let chosen = groups.first { group in
+            hints.contains { group.name.containsFolded($0) }
+        } ?? (groups.count == 3 ? groups.last : nil)
+
+        guard let chosen else { return [] }
+        let names = Dictionary(options.map { ($0.id, $0.name) }, uniquingKeysWith: { first, _ in first })
+        return chosen.optionIDs.compactMap { names[$0] }
     }
 
     private struct DynamicKey: CodingKey {
@@ -63,9 +96,15 @@ public struct NotionPropertySchema: Codable, Sendable {
         init?(intValue: Int) { nil }
     }
 
-    private struct OptionHolder: Decodable {
-        struct Option: Decodable { let name: String }
+    struct OptionHolder: Decodable {
+        struct Option: Decodable { let id: String; let name: String }
+        struct Group: Decodable {
+            let name: String
+            let optionIDs: [String]
+            private enum CodingKeys: String, CodingKey { case name, optionIDs = "option_ids" }
+        }
         let options: [Option]?
+        let groups: [Group]?
     }
 }
 

@@ -1,15 +1,116 @@
 {
   "object": "data_source",
   "id": "ds-tpl-tasks",
-  "title": [{ "plain_text": "Tâches" }],
-  "parent": { "type": "database_id", "database_id": "db-tpl-tasks" },
+  "title": [
+    {
+      "plain_text": "Tâches"
+    }
+  ],
+  "parent": {
+    "type": "database_id",
+    "database_id": "db-tpl-tasks"
+  },
   "properties": {
-    "Name":         { "id": "title",  "name": "Name",         "type": "title" },
-    "Status":       { "id": "p-sta",  "name": "Status",       "type": "status" },
-    "Type":         { "id": "p-typ",  "name": "Type",         "type": "select" },
-    "Responsable":  { "id": "p-per",  "name": "Responsable",  "type": "people" },
-    "Projets":      { "id": "p-prj",  "name": "Projets",      "type": "relation" },
-    "Time Tracker": { "id": "p-tt",   "name": "Time Tracker", "type": "relation" },
-    "Deadline":     { "id": "p-dl",   "name": "Deadline",     "type": "date" }
+    "Name": {
+      "id": "title",
+      "name": "Name",
+      "type": "title"
+    },
+    "Status": {
+      "id": "p-sta",
+      "name": "Status",
+      "type": "status",
+      "status": {
+        "options": [
+          {
+            "id": "o-1",
+            "name": "À faire",
+            "color": "default"
+          },
+          {
+            "id": "o-2",
+            "name": "Bloquée",
+            "color": "default"
+          },
+          {
+            "id": "o-3",
+            "name": "En cours",
+            "color": "default"
+          },
+          {
+            "id": "o-4",
+            "name": "À valider",
+            "color": "default"
+          },
+          {
+            "id": "o-5",
+            "name": "Terminé",
+            "color": "default"
+          },
+          {
+            "id": "o-6",
+            "name": "Annulé",
+            "color": "default"
+          }
+        ],
+        "groups": [
+          {
+            "id": "g-To-do",
+            "name": "To-do",
+            "color": "default",
+            "option_ids": [
+              "o-1"
+            ]
+          },
+          {
+            "id": "g-In progress",
+            "name": "In progress",
+            "color": "default",
+            "option_ids": [
+              "o-2",
+              "o-3",
+              "o-4"
+            ]
+          },
+          {
+            "id": "g-Complete",
+            "name": "Complete",
+            "color": "default",
+            "option_ids": [
+              "o-5",
+              "o-6"
+            ]
+          }
+        ]
+      }
+    },
+    "Type": {
+      "id": "p-typ",
+      "name": "Type",
+      "type": "select",
+      "select": {
+        "options": []
+      }
+    },
+    "Responsable": {
+      "id": "p-per",
+      "name": "Responsable",
+      "type": "people"
+    },
+    "Projets": {
+      "id": "p-prj",
+      "name": "Projets",
+      "type": "relation"
+    },
+    "Time Tracker": {
+      "id": "p-tt",
+      "name": "Time Tracker",
+      "type": "relation"
+    },
+    "Deadline": {
+      "id": "p-dl",
+      "name": "Deadline",
+      "type": "date"
+    }
   }
 }

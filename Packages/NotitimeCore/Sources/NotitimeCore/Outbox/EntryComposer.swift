@@ -41,18 +41,23 @@ public struct EntryComposer: Sendable {
     private let mapper: PropertyMapper
     public let dataSourceID: String
     private let personUserID: String
-    /// Options réellement présentes sur la propriété de statut de la source.
-    private let statusOptions: [String]
     private let taskTitleLookup: @Sendable (String) -> String?
 
     public init(mapper: PropertyMapper, dataSourceID: String, personUserID: String,
-                statusOptions: [String] = [],
                 taskTitleLookup: @escaping @Sendable (String) -> String?) {
         self.mapper = mapper
         self.dataSourceID = dataSourceID
         self.personUserID = personUserID
-        self.statusOptions = statusOptions
         self.taskTitleLookup = taskTitleLookup
+    }
+
+    /// Options réellement déclarées par la source pour une propriété.
+    ///
+    /// Lues sur le mapping, jamais reçues de l'appelant : un paramètre séparé
+    /// pouvait être oublié — il l'a été —, et le composeur écrivait alors des
+    /// libellés que la base ne connaît pas.
+    private func options(_ key: PropertyKey) -> [String] {
+        mapper.reference(key)?.options ?? []
     }
 
     // MARK: - Composition
@@ -115,8 +120,14 @@ public struct EntryComposer: Sendable {
         put(mapper.dateValue(.entryStart, entry.startedAt))
         put(mapper.dateValue(.entryEnd, entry.endedAt))
         put(mapper.numberValue(.entryDuration, entry.durationMinutes))
-        put(mapper.selectOrStatusValue(.entryType, methodName(for: entry.mode)))
-        put(mapper.selectOrStatusValue(.entryStatus, statusName(for: entry.outcome)))
+        if let method = optionName(for: .entryType, hints: EntryComposer.methodHints(entry.mode),
+                                   canonical: EntryComposer.canonicalMethod(entry.mode)) {
+            put(mapper.selectOrStatusValue(.entryType, method))
+        }
+        if let status = optionName(for: .entryStatus, hints: EntryComposer.statusHints(entry.outcome),
+                                   canonical: entry.outcome.notionStatus) {
+            put(mapper.selectOrStatusValue(.entryStatus, status))
+        }
         // Cas limite « invité » : un compte invité n'apparaît pas dans la
         // propriété Personne de la base, et Notion refuse alors l'écriture. On
         // omet la propriété plutôt que d'échouer : mieux vaut une entrée sans
@@ -129,38 +140,62 @@ public struct EntryComposer: Sendable {
         return ["parent": ["data_source_id": dataSourceID], "properties": properties]
     }
 
-    private func methodName(for mode: SessionMode) -> String {
+    static func canonicalMethod(_ mode: SessionMode) -> String {
         switch mode {
         case .pomodoro: return "Pomodoro"
         case .tracker: return "Tracker"
         }
     }
 
-    /// Projette le résultat de session sur les options réellement disponibles.
-    ///
-    /// Une propriété de type `status` n'accepte **que** ses options existantes :
-    /// contrairement à un `select`, l'API n'en crée pas à la volée, et écrire
-    /// « Complété » dans un statut qui propose « Terminée » échoue en 400. On
-    /// reconnaît donc l'option par fragment, et l'on ne retombe sur la valeur
-    /// canonique de la spec que si la source n'annonce aucune option.
-    func statusName(for outcome: SessionOutcome) -> String {
-        let canonical = outcome.notionStatus ?? ""
-        guard !statusOptions.isEmpty else { return canonical }
+    /// Fragments reconnaissant l'option de méthode dans le vocabulaire de la base.
+    /// « Time Tracker » et « Suivi libre » désignent la même chose que « Tracker ».
+    static func methodHints(_ mode: SessionMode) -> [String] {
+        switch mode {
+        case .pomodoro: return ["pomodoro", "pomo"]
+        case .tracker: return ["tracker", "suivi", "libre", "chrono", "manuel"]
+        }
+    }
 
-        let hints: [String]
+    static func statusHints(_ outcome: SessionOutcome) -> [String] {
         switch outcome {
-        case .ranToTerm: hints = ["complét", "complet", "terminé", "termine", "fini", "done", "fait"]
-        case .shortened: hints = ["écourt", "ecourt", "interromp", "annul", "partiel", "stopp", "cancel"]
-        case .ignored: return canonical
+        case .ranToTerm: return ["complét", "complet", "terminé", "termine", "fini", "done", "fait"]
+        case .shortened: return ["écourt", "ecourt", "interromp", "annul", "partiel", "stopp", "cancel"]
+        case .ignored: return []
         }
+    }
 
+    /// Projette une valeur sur les options réellement déclarées par la source.
+    ///
+    /// Une propriété `status` n'accepte **que** ses options existantes : l'API
+    /// n'en crée aucune à la volée, et écrire « Complété » dans un statut qui
+    /// propose « Terminée » échoue en 400 — l'entrée reste alors en file
+    /// indéfiniment. Un `select`, lui, accepte une valeur neuve et la crée ;
+    /// mieux vaut malgré tout reconnaître l'option existante que d'en ajouter un
+    /// doublon dans la base de l'utilisateur.
+    ///
+    /// Rend `nil` quand rien ne correspond et que la propriété ne pardonne pas :
+    /// une entrée sans statut vaut mieux qu'une entrée refusée (principe IV).
+    func optionName(for key: PropertyKey, hints: [String], canonical: String?) -> String? {
+        let declared = options(key)
+        let isStatus = mapper.reference(key)?.type == "status"
+
+        if let canonical, declared.contains(canonical) { return canonical }
         for hint in hints {
-            if let match = statusOptions.first(where: { $0.containsFolded(hint) }) { return match }
+            if let match = declared.first(where: { $0.containsFolded(hint) }) { return match }
         }
-        // Aucune option ne correspond : mieux vaut la valeur canonique, dont
-        // l'échec sera explicite, qu'une option prise au hasard qui rendrait
-        // l'entrée fausse sans que personne ne s'en aperçoive.
+        // Aucune correspondance : un `select` ouvert accepte la valeur canonique
+        // et la crée ; un `status` fermé la refuserait, on préfère l'omettre.
+        guard !isStatus else { return nil }
         return canonical
+    }
+
+    /// Résultats que les options de la source ne savent pas exprimer.
+    /// Sert au journal : une entrée écrite sans statut doit être explicable.
+    public func unexpressibleOutcomes() -> [SessionOutcome] {
+        [.ranToTerm, .shortened].filter {
+            optionName(for: .entryStatus, hints: EntryComposer.statusHints($0),
+                       canonical: $0.notionStatus) == nil
+        }
     }
 
     /// Filtre de vérification d'idempotence : l'identifiant local, porté par la
@@ -173,8 +208,10 @@ public struct EntryComposer: Sendable {
             "filter": ["property": name,
                        "rich_text": ["equals": entry.localID.uuidString]]
         ]
-        // Notion exclut les pages en corbeille par défaut ; il faut le demander.
-        if includeArchived { body["in_trash"] = true }
+        // `is_archived` est le seul sélecteur accepté en corps de requête :
+        // `in_trash` y est explicitement refusé par l'API, et le corps entier
+        // est alors rejeté (contracts/notion-api.md).
+        if includeArchived { body["is_archived"] = true }
         return body
     }
 

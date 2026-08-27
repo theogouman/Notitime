@@ -149,12 +149,31 @@ public struct PropertyRef: Codable, Hashable, Sendable {
     /// n'accepte que les valeurs déjà déclarées. Les conserver ici évite de
     /// relire la source à chaque envoi.
     public var options: [String]
+    /// Options du groupe « terminé », pour un `status`. Vide pour un `select`.
+    ///
+    /// Persistées avec la liaison : c'est ce qui permet de filtrer les tâches
+    /// terminées sans relire le schéma, et sans qu'aucun libellé ne soit écrit
+    /// dans le code.
+    public var completeOptions: [String]
 
-    public init(id: String, name: String, type: String, options: [String] = []) {
+    public init(id: String, name: String, type: String,
+                options: [String] = [], completeOptions: [String] = []) {
         self.id = id
         self.name = name
         self.type = type
         self.options = options
+        self.completeOptions = completeOptions
+    }
+
+    /// Décodage tolérant : les liaisons enregistrées avant l'ajout du champ
+    /// n'en portent pas, et doivent rester lisibles.
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        name = try container.decode(String.self, forKey: .name)
+        type = try container.decode(String.self, forKey: .type)
+        options = try container.decodeIfPresent([String].self, forKey: .options) ?? []
+        completeOptions = try container.decodeIfPresent([String].self, forKey: .completeOptions) ?? []
     }
 }
 
@@ -374,7 +393,11 @@ public final class AppSettings {
                 notificationsEnabled: Bool = true, soundEnabled: Bool = true,
                 launchAtLogin: Bool = false, focusShortcutName: String? = nil,
                 taskRefreshIntervalMinutes: Int = 5, showUnassignedTasks: Bool = false,
-                doneStatusValues: [String] = ["Done", "Terminé", "Fait"]) {
+                // Vide par défaut : c'est le groupe « terminé » du schéma qui
+                // dit ce qu'être terminé veut dire dans la base de l'utilisateur.
+                // Une liste écrite ici serait du vocabulaire supposé — et « Done »
+                // faisait rejeter la requête entière sur une base francophone.
+                doneStatusValues: [String] = []) {
         self.singletonKey = "settings"
         self.pomodoroMinutes = pomodoroMinutes
         self.shortBreakMinutes = shortBreakMinutes

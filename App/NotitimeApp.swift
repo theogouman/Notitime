@@ -93,6 +93,11 @@ final class RootState: ObservableObject {
             ]
             onboarding.restoreFromPersistence()
             Task {
+                // Repère de lancement : sans lui, deux lignes identiques à
+                // quelques secondes d'écart ne disent pas si l'application a
+                // redémarré entre les deux — question qu'on s'est posée.
+                await environment.log.log(.app, "démarrage pid=\(ProcessInfo.processInfo.processIdentifier) "
+                                          + "version=\(AppEnvironment.shortVersion)")
                 await session.applySettings()
                 await validateAtStartup(environment)
                 // Une session retrouvée reprend la main avant toute autre chose :
