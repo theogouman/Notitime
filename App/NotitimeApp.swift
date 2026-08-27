@@ -117,7 +117,10 @@ final class RootState: ObservableObject {
 
     /// Vrai quand Notitime a de quoi travailler : une connexion et les rôles
     /// indispensables liés.
-    var isConfigured: Bool { onboarding?.isConfigured ?? false }
+    var isConfigured: Bool { readiness == .ready }
+
+    /// Une seule lecture de la situation pour toutes les surfaces.
+    var readiness: AppReadiness { onboarding?.readiness ?? .needsConnection }
 
     var workspaceSummary: String {
         guard let onboarding, !onboarding.workspaceName.isEmpty else {
@@ -194,18 +197,29 @@ struct RootView: View {
                 Divider()
             }
 
-            summary
+            switch state.readiness {
+            case .needsConnection:
+                // Rien d'autre n'est proposé : démarrer une session sans compte
+                // relié produirait une entrée que rien ne pourrait envoyer.
+                ConnectPromptView(size: .compact, showsHint: false) {
+                    ConfigurationWindow.present(openWindow)
+                    Task { await state.onboarding?.connect() }
+                }
 
-            if state.isConfigured, let session = state.session {
-                SessionControls(controller: session)
-                Divider()
-            }
+            case .needsBinding:
+                summary
+                Button("Terminer la configuration…") {
+                    ConfigurationWindow.present(openWindow)
+                }
+                .buttonStyle(.borderedProminent)
 
-            if state.isConfigured {
+            case .ready:
+                summary
+                if let session = state.session {
+                    SessionControls(controller: session)
+                    Divider()
+                }
                 Button("Réglages…") { ConfigurationWindow.present(openWindow) }
-            } else {
-                Button("Configurer Notitime…") { ConfigurationWindow.present(openWindow) }
-                    .buttonStyle(.borderedProminent)
             }
 
             Divider()
@@ -226,7 +240,7 @@ struct RootView: View {
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         } else {
-            Text("Notitime n'est pas encore relié à Notion.")
+            Text("Connecté, mais il reste des bases à désigner.")
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)

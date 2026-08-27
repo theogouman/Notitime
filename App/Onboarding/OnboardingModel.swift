@@ -50,10 +50,18 @@ final class OnboardingModel: ObservableObject {
         self.environment = environment
     }
 
-    /// Vrai quand la configuration permet de travailler.
-    var isConfigured: Bool {
-        !workspaceName.isEmpty || !boundRoles.isEmpty ? requiredRolesAreBound : false
+    /// Un compte Notion est relié. La présence de la connexion en base fait foi :
+    /// l'état de `ConnectionService` repart à « déconnecté » à chaque lancement,
+    /// alors que les tokens, eux, survivent dans le trousseau.
+    @Published private(set) var isConnected = false
+
+    /// Ce que l'application peut faire, pour le menu comme pour la fenêtre.
+    var readiness: AppReadiness {
+        AppReadiness.evaluate(isConnected: isConnected, boundRoles: boundRoles)
     }
+
+    /// Vrai quand la configuration permet de travailler.
+    var isConfigured: Bool { readiness == .ready }
 
     /// Rétablit ce que la persistance sait déjà, pour ne pas proposer de
     /// reconnecter un workspace déjà relié à chaque lancement.
@@ -62,6 +70,7 @@ final class OnboardingModel: ObservableObject {
         guard let connection = try? context.fetch(FetchDescriptor<NotionConnection>()).first
         else { return }
 
+        isConnected = true
         workspaceName = connection.workspaceName
         ownerName = connection.ownerName
         templateID = connection.duplicatedTemplateID
@@ -104,11 +113,27 @@ final class OnboardingModel: ObservableObject {
     func disconnect() async {
         do {
             try await environment.connection.disconnect()
+            forgetConnection()
             step = .disconnected
             outcome = nil
         } catch {
             step = .failed(describe(error))
         }
+    }
+
+    /// Efface la connexion enregistrée, **sans toucher aux liaisons** : elles
+    /// resservent telles quelles à la reconnexion, et la file d'envoi les
+    /// référence encore (FR-008). C'est leur survie qui laissait croire à une
+    /// configuration valide alors qu'aucun compte n'était relié.
+    private func forgetConnection() {
+        let context = environment.container.mainContext
+        let stored = (try? context.fetch(FetchDescriptor<NotionConnection>())) ?? []
+        stored.forEach(context.delete)
+        try? context.save()
+        isConnected = false
+        workspaceName = ""
+        ownerName = ""
+        templateID = nil
     }
 
     // MARK: - Découverte
@@ -347,6 +372,7 @@ final class OnboardingModel: ObservableObject {
             connectedAt: Date()
         ))
         try? context.save()
+        isConnected = true
     }
 
     private func persist(_ result: DiscoveryOutcome) async {

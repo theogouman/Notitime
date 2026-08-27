@@ -39,6 +39,11 @@ Comportements visibles par l'utilisateur, dans l'ordre des livraisons.
 - Cet écran s'ouvre de lui-même au premier lancement et après une déconnexion :
   il n'y avait jusqu'ici rien à faire dans le menu, sans que rien ne le dise.
 - Clic droit sur l'icône de la barre de menus : Réglages, À propos, Quitter.
+- Le menu de la barre de menus propose exactement la même chose que la fenêtre
+  quand aucun compte n'est relié : le logo, le titre, la description et le bouton
+  de connexion. Il laissait auparavant démarrer une session après une
+  déconnexion — les liaisons survivent à celle-ci, et passaient pour une
+  configuration valide.
 
 ### Réglages
 

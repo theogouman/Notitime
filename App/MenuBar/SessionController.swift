@@ -179,6 +179,7 @@ final class SessionController: ObservableObject {
     // MARK: - Session
 
     func startPomodoro(minutes: Int? = nil) async {
+        guard isConnected else { return refuseWithoutConnection() }
         guard let taskID = selectedTaskID, !taskID.isEmpty else {
             notice = "Choisissez d'abord une tâche."
             return
@@ -198,6 +199,7 @@ final class SessionController: ObservableObject {
 
     /// US4.1 — suivi libre : aucune cible, l'utilisateur arrête quand il veut.
     func startTracker() async {
+        guard isConnected else { return refuseWithoutConnection() }
         guard let taskID = selectedTaskID, !taskID.isEmpty else {
             notice = "Choisissez d'abord une tâche."
             return
@@ -442,6 +444,18 @@ final class SessionController: ObservableObject {
         }
         refreshPendingCount()
         if pendingCount > 0 { await drainOnce() }
+    }
+
+    /// Un compte Notion est relié. Les liaisons, elles, survivent à une
+    /// déconnexion : les prendre pour une configuration valide laissait démarrer
+    /// une session qui n'aurait eu nulle part où aller.
+    private var isConnected: Bool {
+        let context = environment.container.mainContext
+        return ((try? context.fetch(FetchDescriptor<NotionConnection>()))?.isEmpty == false)
+    }
+
+    private func refuseWithoutConnection() {
+        notice = "Connectez votre compte Notion avant de démarrer une session."
     }
 
     private func makeComposer(_ binding: DatabaseBinding) -> EntryComposer? {

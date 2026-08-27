@@ -30,53 +30,8 @@ struct OnboardingView: View {
         }
     }
 
-    /// Premier écran : ce que fait l'application, et une seule chose à faire.
-    ///
-    /// Le logo vient du bundle plutôt que d'un asset dédié : il reste ainsi
-    /// exactement celui du Dock et du Finder, sans copie à maintenir.
     private var disconnected: some View {
-        VStack(spacing: 16) {
-            Image(nsImage: NSApp.applicationIconImage)
-                .resizable()
-                .frame(width: 96, height: 96)
-                .accessibilityHidden(true)
-
-            VStack(spacing: 6) {
-                Text("Notitime")
-                    .font(.largeTitle.weight(.semibold))
-                Text("Mesurez combien de temps vous passez sur vos tâches")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-
-            Button {
-                Task { await model.connect() }
-            } label: {
-                HStack(spacing: 8) {
-                    Text("Connecter mon Notion")
-                    // Gabarit : le logo prend la couleur du libellé, donc blanc
-                    // sur le bouton teinté, et lisible dans les deux thèmes.
-                    Image("NotionLogo")
-                        .renderingMode(.template)
-                }
-                .padding(.horizontal, 6)
-                .padding(.vertical, 3)
-            }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.large)
-
-            Text("Dupliquez le template proposé, ou choisissez des pages existantes : "
-                 + "Notitime reconnaîtra vos bases.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(.horizontal, 12)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 28)
+        ConnectPromptView { Task { await model.connect() } }
     }
 
     private func progress(_ message: String) -> some View {
