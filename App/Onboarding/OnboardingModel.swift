@@ -254,15 +254,34 @@ final class OnboardingModel: ObservableObject {
     func browseAccessibleSources() async {
         step = .discovering
         do {
-            accessibleSources = try await makeDiscovery().allAccessibleSources()
+            try await fetchAccessibleSources()
             step = .manualSelection
         } catch {
             step = .failed(describe(error))
         }
     }
 
+    /// Charge les sources partagées **sans changer d'étape**.
+    ///
+    /// L'étape pilote l'écran affiché : la changer depuis une feuille modale
+    /// remplace la vue qui la présente, et la feuille disparaît avec elle —
+    /// laissant l'utilisateur devant un écran de désignation dont il ne pouvait
+    /// plus sortir. Le choix d'une base depuis les réglages n'a aucune raison de
+    /// déplacer l'écran qu'il recouvre.
+    func fetchAccessibleSources() async throws {
+        accessibleSources = try await makeDiscovery().allAccessibleSources()
+    }
+
     /// Assignation manuelle d'une source à un rôle (FR-005, FR-006a).
-    func assign(dataSourceID: String, databaseID: String?, name: String, to role: DatabaseRole) async {
+    ///
+    /// `changesStep` reste vrai pendant l'onboarding, où l'assignation fait
+    /// avancer le parcours. Il est faux depuis les réglages, où l'écran ne doit
+    /// pas bouger sous la feuille de choix. Le retour dit si la source a été
+    /// acceptée : un schéma incomplet la refuse, et la feuille doit le montrer
+    /// plutôt que de se fermer comme si tout allait bien.
+    @discardableResult
+    func assign(dataSourceID: String, databaseID: String?, name: String,
+                to role: DatabaseRole, changesStep: Bool = true) async -> Bool {
         await environment.log.log(.sync, "assignation demandée rôle=\(role.rawValue) source=\(dataSourceID)")
         do {
             let source = try await environment.notion.retrieveDataSource(id: dataSourceID)
@@ -279,18 +298,21 @@ final class OnboardingModel: ObservableObject {
                 // Un rôle lié ne signifie pas la configuration terminée : lier
                 // Tâches puis basculer en « connecté » laisserait Time Entries
                 // sans source, et la première session n'aurait nulle part où aller.
-                step = requiredRolesAreBound ? .ready : stepForPendingAssignment()
+                if changesStep { step = requiredRolesAreBound ? .ready : stepForPendingAssignment() }
+                return true
             case .missing(let missing, _, _):
                 // FR-006 : la configuration est refusée tant que le schéma n'est
                 // pas valide ; on affiche ce qui manque et on propose de créer.
                 missingByRole[role] = missing
                 await environment.log.log(.sync, "assignation refusée rôle=\(role.rawValue) "
                                           + "manquantes=[\(missing.map(\.rawValue).joined(separator: " "))]")
-                step = stepForPendingAssignment()
+                if changesStep { step = stepForPendingAssignment() }
+                return false
             }
         } catch {
             await environment.log.log(.error, "assignation en échec rôle=\(role.rawValue) : \(error)")
-            step = .failed(describe(error))
+            if changesStep { step = .failed(describe(error)) }
+            return false
         }
     }
 

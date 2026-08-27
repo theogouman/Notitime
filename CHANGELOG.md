@@ -48,6 +48,9 @@ Comportements visibles par l'utilisateur, dans l'ordre des livraisons.
 ### Réglages
 
 - « Se déconnecter » depuis les réglages, qui ramène à l'écran d'accueil.
+- Changer une base liée ouvre une fenêtre de choix par-dessus les réglages, au
+  lieu de remplacer l'écran par une désignation dont on ne pouvait plus sortir —
+  ni se déconnecter, ni revenir, ni changer quoi que ce soit.
 - Section « Connexion » remaniée : le nom du workspace en titre, son icône —
   emoji comme image —, la date de connexion, et les bases liées présentées en
   tableau, chacune modifiable depuis sa ligne.

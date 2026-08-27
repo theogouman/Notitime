@@ -158,7 +158,15 @@ struct OnboardingView: View {
     /// Désignation manuelle : toutes les sources accessibles, rôle par rôle.
     @ViewBuilder
     private var manualSelection: some View {
-        Text("Choisir mes bases").font(.headline)
+        HStack {
+            Text("Choisir mes bases").font(.headline)
+            Spacer()
+            // Sortie toujours offerte dès que l'essentiel est lié : sans elle,
+            // cet écran retenait l'utilisateur.
+            if model.isConfigured {
+                Button("Terminer") { Task { await model.revalidate() } }
+            }
+        }
         roleStatus
 
         if model.accessibleSources.isEmpty {
@@ -195,9 +203,15 @@ struct OnboardingView: View {
         }
     }
 
-    /// Rôles restant à lier, dans l'ordre où ils comptent pour démarrer.
+    /// Rôles proposés au choix.
+    ///
+    /// Tous, et pas seulement ceux qui manquent : quand tout est déjà lié, ne
+    /// montrer que les rôles non liés donnait un écran vide dont on ne pouvait
+    /// plus sortir — ni désigner, ni revenir, ni se déconnecter.
     private var rolesToBind: [DatabaseRole] {
-        [.tasks, .timeEntries, .projects].filter { !model.boundRoles.contains($0) }
+        let missing = [DatabaseRole.tasks, .timeEntries, .projects]
+            .filter { !model.boundRoles.contains($0) }
+        return missing.isEmpty ? [.tasks, .timeEntries, .projects] : missing
     }
 
     private func failure(_ message: String) -> some View {

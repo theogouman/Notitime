@@ -179,78 +179,136 @@ struct WorkspaceIconView: View {
 }
 
 /// Choix d'une autre source pour un rôle donné (FR-007).
+///
+/// La feuille travaille sur son propre état : elle ne change jamais l'étape du
+/// modèle, sans quoi l'écran qui la présente serait remplacé et la feuille
+/// disparaîtrait avec lui.
 struct DatabasePickerSheet: View {
 
     @ObservedObject var model: OnboardingModel
     let role: DatabaseRole
     let onClose: () -> Void
 
-    @State private var isLoading = true
-    @State private var search = ""
-
-    private var sources: [AccessibleSource] {
-        let needle = search.trimmingCharacters(in: .whitespaces).lowercased()
-        guard !needle.isEmpty else { return model.accessibleSources }
-        return model.accessibleSources.filter { $0.name.lowercased().contains(needle) }
+    private enum LoadState {
+        case loading
+        case loaded([AccessibleSource])
+        case failed(String)
     }
+
+    @State private var state: LoadState = .loading
+    @State private var search = ""
+    @State private var refused: [PropertyKey] = []
+    @State private var isAssigning = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Choisir la base « \(DatabaseRow(role: role, source: nil, isOptional: false).label) »")
                 .font(.headline)
 
-            if isLoading {
-                HStack(spacing: 8) {
-                    ProgressView().controlSize(.small)
-                    Text("Lecture des bases partagées avec Notitime…").font(.callout)
-                }
-                .frame(maxWidth: .infinity, minHeight: 120)
-            } else if model.accessibleSources.isEmpty {
-                Text("Aucune base n'est partagée avec Notitime. Ouvrez la base dans "
-                     + "Notion, puis « Connexions » → Notitime.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .frame(maxWidth: .infinity, minHeight: 120, alignment: .topLeading)
-            } else {
-                TextField("Rechercher une base", text: $search)
-                    .textFieldStyle(.roundedBorder)
-                List(sources) { source in
-                    HStack {
-                        Text(source.name.isEmpty ? "Sans titre" : source.name)
-                        Spacer()
-                        Button("Lier") {
-                            Task {
-                                await model.assign(dataSourceID: source.id,
-                                                   databaseID: source.databaseID,
-                                                   name: source.name, to: role)
-                                onClose()
-                            }
-                        }
-                    }
-                }
-                .frame(minHeight: 220)
-            }
+            content
+                .frame(maxWidth: .infinity, minHeight: 240, alignment: .topLeading)
 
             // FR-006 : un schéma incomplet se dit, et n'est pas accepté.
-            if let missing = model.missingByRole[role], !missing.isEmpty {
-                Text("Propriétés manquantes : " + missing.map(\.rawValue).joined(separator: ", "))
+            if !refused.isEmpty {
+                Text("Base refusée — propriétés manquantes : "
+                     + refused.map(\.rawValue).joined(separator: ", "))
                     .font(.caption)
                     .foregroundStyle(.orange)
                     .fixedSize(horizontal: false, vertical: true)
             }
 
             HStack {
+                Button("Recharger") { Task { await load() } }
+                    .controlSize(.small)
                 Spacer()
                 Button("Fermer") { onClose() }
                     .keyboardShortcut(.cancelAction)
             }
         }
         .padding(16)
-        .frame(width: 420)
-        .task {
-            await model.browseAccessibleSources()
-            isLoading = false
+        .frame(width: 440)
+        .task { await load() }
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        switch state {
+        case .loading:
+            HStack(spacing: 8) {
+                ProgressView().controlSize(.small)
+                Text("Lecture des bases partagées avec Notitime…").font(.callout)
+            }
+
+        case .failed(let message):
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Impossible de lire vos bases.").font(.callout)
+                Text(message)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+        case .loaded(let sources) where sources.isEmpty:
+            Text("Aucune base n'est partagée avec Notitime. Ouvrez la base dans "
+                 + "Notion, puis « Connexions » → Notitime.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+        case .loaded(let sources):
+            VStack(alignment: .leading, spacing: 8) {
+                TextField("Rechercher une base", text: $search)
+                    .textFieldStyle(.roundedBorder)
+                List(filtered(sources)) { source in
+                    HStack {
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(source.name.isEmpty ? "Sans titre" : source.name)
+                            if model.bindings[role] == source.name {
+                                Text("Base actuellement liée")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        Spacer()
+                        Button("Lier") { Task { await choose(source) } }
+                            .disabled(isAssigning)
+                    }
+                }
+            }
+        }
+    }
+
+    private func filtered(_ sources: [AccessibleSource]) -> [AccessibleSource] {
+        let needle = search.trimmingCharacters(in: .whitespaces).lowercased()
+        guard !needle.isEmpty else { return sources }
+        return sources.filter { $0.name.lowercased().contains(needle) }
+    }
+
+    private func load() async {
+        state = .loading
+        do {
+            try await model.fetchAccessibleSources()
+            state = .loaded(model.accessibleSources)
+        } catch {
+            state = .failed(String(describing: error))
+        }
+    }
+
+    /// La feuille ne se ferme que si la base a été acceptée : un schéma
+    /// incomplet doit rester visible là où le choix a été fait.
+    private func choose(_ source: AccessibleSource) async {
+        isAssigning = true
+        defer { isAssigning = false }
+        refused = []
+
+        let accepted = await model.assign(dataSourceID: source.id,
+                                          databaseID: source.databaseID,
+                                          name: source.name, to: role,
+                                          changesStep: false)
+        if accepted {
+            onClose()
+        } else {
+            refused = model.missingByRole[role] ?? []
         }
     }
 }
