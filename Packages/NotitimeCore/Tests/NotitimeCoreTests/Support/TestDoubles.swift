@@ -177,3 +177,20 @@ actor RecordingSessionPersistence: SessionPersistence {
         return nil
     }
 }
+
+/// Transport qui respecte l'annulation coopérative, comme `URLSession`.
+///
+/// Indispensable pour reproduire le défaut de production : une requête émise
+/// depuis une tâche annulée est abandonnée avec `NSURLErrorCancelled`, sans
+/// jamais atteindre Notion.
+actor CancellationAwareTransport: HTTPTransport {
+    struct Cancelled: Error {}
+    private let inner: FixtureTransport
+
+    init(_ inner: FixtureTransport) { self.inner = inner }
+
+    func send(_ request: HTTPRequest) async throws -> HTTPResponse {
+        if Task.isCancelled { throw Cancelled() }
+        return try await inner.send(request)
+    }
+}

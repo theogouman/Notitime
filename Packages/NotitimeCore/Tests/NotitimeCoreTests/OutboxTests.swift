@@ -248,3 +248,72 @@ final class OutboxLoggingTests: XCTestCase {
         XCTAssertTrue(contents.contains("page-abc"), "obtenu : \(contents)")
     }
 }
+
+/// L'envoi ne doit jamais dépendre du cycle de vie de l'appelant.
+///
+/// En production, la fin d'un pomodoro annulait la tâche du minuteur puis
+/// lançait l'envoi **depuis cette même tâche** : `URLSession` abandonnait
+/// aussitôt la requête (`NSURLErrorCancelled`), et l'entrée n'atteignait jamais
+/// Notion. Principe IV : une session ne se perd jamais.
+final class OutboxCancellationTests: XCTestCase {
+
+    private func makeOutbox(_ transport: HTTPTransport) -> Outbox {
+        Outbox(client: NotionClient(transport: transport,
+                                    authorization: StaticAuthorization(),
+                                    rateLimiter: .forTesting(VirtualTimeSource())),
+               composer: EntryComposer(mapper: PropertyMapper(map: [
+                    .entryTitle: PropertyRef(id: "title", name: "Name", type: "title")
+               ]), dataSourceID: "ds", personUserID: "u-1", taskTitleLookup: { _ in "T" }))
+    }
+
+    private func entry() -> ComposedEntry {
+        let start = ISO8601DateFormatter().date(from: "2026-08-27T14:30:00Z")!
+        return ComposedEntry(localID: UUID(), taskPageID: "t-1", title: "T",
+                             startedAt: start, endedAt: start.addingTimeInterval(300),
+                             durationMinutes: 5, mode: .pomodoro, outcome: .ranToTerm,
+                             shortenReason: nil, subtractedIdleMinutes: 0)
+    }
+
+    private func fixture() async -> FixtureTransport {
+        let transport = FixtureTransport()
+        await transport.enqueue(.post, NotionAPI.Path.pages, status: 200,
+                                json: #"{"object":"page","id":"page-1"}"#)
+        return transport
+    }
+
+    /// Le défaut, reproduit : depuis une tâche annulée, l'envoi n'aboutit pas.
+    func testSendFromACancelledTaskFails() async throws {
+        let transport = CancellationAwareTransport(await fixture())
+        let outbox = makeOutbox(transport)
+        let entry = entry()
+
+        let task = Task { () -> SendResult in
+            // L'appelant s'annule lui-même avant d'envoyer, exactement comme le
+            // minuteur le faisait en fin de session.
+            withUnsafeCurrentTask { $0?.cancel() }
+            return await outbox.send(entry)
+        }
+        let result = await task.value
+
+        guard case .retryLater(let outcome, _) = result else {
+            return XCTFail("attendu un réessai, obtenu \(result)")
+        }
+        XCTAssertEqual(outcome, .indeterminate)
+    }
+
+    /// La garantie attendue : l'envoi détaché aboutit malgré l'annulation.
+    func testDetachedSendSurvivesCallerCancellation() async throws {
+        let transport = CancellationAwareTransport(await fixture())
+        let outbox = makeOutbox(transport)
+        let entry = entry()
+
+        let task = Task { () -> SendResult in
+            withUnsafeCurrentTask { $0?.cancel() }
+            return await outbox.sendDetached(entry)
+        }
+        let result = await task.value
+
+        XCTAssertEqual(result, .sent(pageID: "page-1"),
+                       "l'entrée doit partir même si l'appelant a été annulé")
+    }
+}

@@ -80,8 +80,12 @@ public actor SessionLog {
             output = replace(in: output,
                              pattern: "(?i)(\"\(key)\"\\s*:\\s*\")[^\"]*(\")",
                              template: "$1***$2")
+            // Un entier — éventuellement signé — n'est jamais un secret, mais
+            // c'est souvent un code de diagnostic : `Code=-999` pour une requête
+            // annulée, `code=429` pour une limite de débit. Les masquer rendait
+            // le journal inutilisable là où il sert le plus.
             output = replace(in: output,
-                             pattern: "(?i)(\\b\(key)\\b\\s*[=:]\\s*)[^\\s,;)}\\]]+",
+                             pattern: "(?i)(\\b\(key)\\b\\s*[=:]\\s*)(?!-?\\d+\\b)[^\\s,;)}\\]]+",
                              template: "$1***")
         }
         return output

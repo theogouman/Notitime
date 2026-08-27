@@ -24,6 +24,8 @@ final class SessionController: ObservableObject {
     private let environment: AppEnvironment
     private let machine: SessionMachine
     private var ticker: Task<Void, Never>?
+    /// Invalide un minuteur sans l'annuler : voir `stopTicking`.
+    private var tickerGeneration = 0
     private var settings = SessionSettings()
     private let notifications: NotificationPresenter
 
@@ -108,14 +110,30 @@ final class SessionController: ObservableObject {
     /// Un tick par seconde : c'est la granularité de l'affichage, et la machine
     /// n'a besoin de rien de plus fin — la durée se calcule sur l'horloge, pas
     /// sur le nombre de ticks reçus.
+    /// Invalide le minuteur courant **sans annuler aucune tâche**.
+    ///
+    /// Le minuteur appelle `react`, qui déclenche l'envoi : annuler la tâche
+    /// depuis l'intérieur reviendrait à s'annuler soi-même, et `URLSession`
+    /// abandonnerait la requête. On invalide donc par génération — la boucle
+    /// constate au tour suivant qu'elle n'est plus la courante et sort.
+    private func stopTicking() {
+        tickerGeneration &+= 1
+    }
+
+    /// Un tick par seconde : c'est la granularité de l'affichage, et la machine
+    /// n'a besoin de rien de plus fin — la durée se calcule sur l'horloge, pas
+    /// sur le nombre de ticks reçus.
     private func startTicking() {
-        ticker?.cancel()
+        tickerGeneration &+= 1
+        let generation = tickerGeneration
         ticker = Task { [weak self] in
-            while !Task.isCancelled {
+            while true {
                 try? await Task.sleep(for: .seconds(1))
-                guard let self else { return }
+                guard let self, self.tickerGeneration == generation else { return }
                 let result = await self.machine.handle(.tick)
                 await self.react(to: result)
+                // Sortie sur constat, jamais sur annulation : `react` a pu
+                // déclencher un envoi qui doit aller à son terme.
                 if await self.machine.snapshot == nil { return }
             }
         }
@@ -132,18 +150,21 @@ final class SessionController: ObservableObject {
         case .ignored(let seconds):
             // FR-023 : l'utilisateur doit savoir pourquoi rien n'est parti.
             notice = "Session de \(seconds) s ignorée : moins d'une minute, rien n'a été envoyé."
-            ticker?.cancel()
+            stopTicking()
             await refreshPhase()
 
         case .breakEnded:
             suggestedBreak = nil
             notice = "Pause terminée."
-            ticker?.cancel()
+            stopTicking()
             await refreshPhase()
             await notifications.breakFinished(isLong: false)
 
         case .finished(let session, let suggestion):
-            ticker?.cancel()
+            // Le minuteur s'annulait lui-même ici, puis l'envoi partait depuis
+            // la tâche annulée : `URLSession` l'abandonnait aussitôt. On détache
+            // l'arrêt du minuteur de la suite du traitement.
+            stopTicking()
             await refreshPhase()
             // FR-032 : prévenir d'abord, envoyer ensuite. L'utilisateur n'a pas
             // à attendre que Notion réponde pour savoir que son pomodoro est fini.
@@ -188,7 +209,7 @@ final class SessionController: ObservableObject {
         refreshPendingCount()
 
         let outbox = Outbox(client: environment.notion, composer: composer, log: environment.log)
-        switch await outbox.send(entry) {
+        switch await outbox.sendDetached(entry) {
         case .sent(let pageID):
             await environment.log.log(.sync, "entrée retirée de la file page=\(pageID)")
             markSent(entry.localID)

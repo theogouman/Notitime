@@ -30,6 +30,24 @@ public actor Outbox {
         self.log = log
     }
 
+    /// Envoie l'entrée **hors du cycle de vie de l'appelant**.
+    ///
+    /// L'envoi d'une session terminée ne doit dépendre de rien : ni d'un
+    /// minuteur qu'on vient d'arrêter, ni d'une vue qu'on ferme, ni d'un menu
+    /// qui se referme. `URLSession` respecte l'annulation coopérative, si bien
+    /// qu'une requête émise depuis une tâche annulée est abandonnée avant
+    /// d'atteindre Notion — l'entrée reste alors en file, avec une issue
+    /// indéterminée, sans que rien ne l'ait jamais quittée.
+    ///
+    /// C'est exactement ce qui se produisait en fin de pomodoro : la tâche du
+    /// minuteur s'annulait elle-même avant de déclencher l'envoi. Détacher
+    /// coupe cette dépendance à la racine (principe IV).
+    public func sendDetached(_ entry: ComposedEntry) async -> SendResult {
+        await Task.detached(priority: .userInitiated) { [self] in
+            await send(entry)
+        }.value
+    }
+
     /// Tente de créer la page, puis publie le commentaire si la session en
     /// justifie un.
     public func send(_ entry: ComposedEntry) async -> SendResult {
