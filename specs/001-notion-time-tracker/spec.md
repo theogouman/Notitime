@@ -12,7 +12,7 @@
 
 ### Session 2026-08-27
 
-- Q: Par quel mécanisme le code d'autorisation OAuth revient-il de Notion vers l'app dans la barre de menus ? (FR-001) → A: `ASWebAuthenticationSession` ; redirect URI HTTPS vers le service serveur, qui redirige vers le schéma d'URL personnalisé `notitime://oauth-callback` porté par l'app.
+- Q: Par quel mécanisme le code d'autorisation OAuth revient-il de Notion vers l'app dans la barre de menus ? (FR-001) → A: `ASWebAuthenticationSession` ; redirect URI HTTPS vers le service serveur, qui redirige vers le schéma d'URL personnalisé `notitime://auth` porté par l'app.
 - Q: Comment l'app garantit-elle qu'un réessai ne crée jamais de doublon dans Time Entries ? (FR-028) → A: La première tentative crée l'entrée directement (1 requête). La recherche par « Identifiant local » n'a lieu qu'avant un réessai consécutif à une réponse ambiguë (délai dépassé, coupure pendant la requête, réponse non reçue) ; un réessai qui suit une réponse d'erreur explicite de Notion s'en dispense.
 - Q: Quand un envoi devient-il un échec définitif ? (FR-029, FR-030) → A: Classement par type d'erreur : erreurs permanentes (400, 403, 404) en échec définitif immédiat sans réessai ; erreurs transitoires (réseau, 429, 5xx) réessayées indéfiniment avec backoff plafonné, jamais abandonnées.
 - Q: Jusqu'où va la récupération des tâches mises en cache ? (FR-009) → A: Filtres poussés côté API (statut non terminé + personne courante), pagination suivie jusqu'au bout sans plafond ; la recherche au clavier filtre le cache local sans requête réseau.
@@ -173,7 +173,7 @@ L'utilisateur ajuste les durées des pomodoros et des pauses (préréglages 25/5
 
 **Connexion et configuration**
 
-- **FR-001**: L'application MUST s'authentifier auprès de Notion exclusivement par OAuth 2.0 (connexion publique), l'échange du code et le rafraîchissement du token passant par un service serveur sans état qui ne conserve aucune donnée. Le flux d'autorisation MUST se dérouler dans une `ASWebAuthenticationSession` ; l'URL de redirection déclarée dans l'intégration Notion MUST pointer vers le service serveur, qui MUST rediriger vers le schéma d'URL personnalisé `notitime://oauth-callback` porté par l'application ; l'application MUST NOT ouvrir de port en écoute pour recevoir le callback.
+- **FR-001**: L'application MUST s'authentifier auprès de Notion exclusivement par OAuth 2.0 (connexion publique), l'échange du code et le rafraîchissement du token passant par un service serveur sans état qui ne conserve aucune donnée. Le flux d'autorisation MUST se dérouler dans une `ASWebAuthenticationSession` ; l'URL de redirection déclarée dans l'intégration Notion MUST pointer vers le service serveur, qui MUST rediriger vers le schéma d'URL personnalisé `notitime://auth` porté par l'application (voir `contracts/oauth-backend.md`) ; l'application MUST NOT ouvrir de port en écoute pour recevoir le callback.
 - **FR-002**: L'application MUST stocker le token d'accès et le token de rafraîchissement dans le Keychain macOS et MUST rafraîchir le token d'accès automatiquement avant expiration ou sur rejet.
 - **FR-003**: L'application MUST conserver localement les identifiants de workspace, de bot et d'utilisateur retournés lors de l'autorisation, ainsi que le nom et l'icône du workspace pour affichage.
 - **FR-004**: Lorsque l'autorisation retourne un identifiant de template dupliqué, l'application MUST découvrir automatiquement les bases Projets, Tâches et Time Entries dans la page dupliquée et les assigner à leurs rôles.
