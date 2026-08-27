@@ -110,12 +110,38 @@ public struct NotionRichText: Decodable, Sendable {
     }
 }
 
-/// Bloc enfant d'une page. Seuls les `child_database` intéressent la découverte.
+/// Bloc enfant d'une page. Seuls les `child_database` intéressent la découverte,
+/// mais il faut traverser les conteneurs de mise en page pour les atteindre.
 public struct NotionBlock: Decodable, Sendable {
     public let id: String
     public let type: String
+    public let hasChildren: Bool
+
+    private enum CodingKeys: String, CodingKey { case id, type, hasChildren = "has_children" }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        type = try container.decode(String.self, forKey: .type)
+        hasChildren = try container.decodeIfPresent(Bool.self, forKey: .hasChildren) ?? false
+    }
+
+    public init(id: String, type: String, hasChildren: Bool) {
+        self.id = id
+        self.type = type
+        self.hasChildren = hasChildren
+    }
 
     public var isChildDatabase: Bool { type == "child_database" }
+
+    /// Une page enfant est une **autre page** : la descente s'y arrêterait dans un
+    /// espace de travail entier. Une base a pour enfants ses lignes, pas des blocs.
+    public var isExternalPage: Bool { type == "child_page" }
+
+    /// Conteneur de mise en page à traverser : colonnes, bascules, encarts, listes.
+    public var shouldDescend: Bool {
+        hasChildren && !isChildDatabase && !isExternalPage
+    }
 }
 
 public struct NotionList<Element: Decodable & Sendable>: Decodable, Sendable {

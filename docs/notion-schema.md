@@ -29,6 +29,8 @@ C'est ce qui permet à un second membre de l'équipe de partager la page du temp
 existant et d'obtenir une configuration valide sans saisir aucun identifiant
 (SC-007), et à l'équipe de renommer une base sans rien casser.
 
+Les trois bases peuvent être imbriquées dans la page parente — colonnes, bascule, encart : la découverte traverse ces conteneurs jusqu'à cinq niveaux. Elle ne suit pas les pages enfants et ne descend pas dans les bases.
+
 Le rôle le plus contraint est attribué en premier. Une source Time Entries
 satisferait aussi le schéma « Tâches » — un titre et un select suffisent — donc
 l'ordre d'attribution est : Time Entries, puis Tâches, puis Projets.

@@ -49,19 +49,57 @@ public actor NotionClient {
         return results
     }
 
-    /// Blocs enfants d'une page : on n'en retient que les `child_database`,
-    /// dont l'identifiant de bloc est celui de la base.
-    public func childDatabaseIDs(ofPage pageID: String) async throws -> [String] {
-        var identifiers: [String] = []
+    /// Profondeur maximale de la descente dans l'arborescence de blocs.
+    ///
+    /// Un template range volontiers ses bases dans des colonnes, elles-mêmes dans
+    /// une bascule ou un encart : trois niveaux sont courants. La borne existe
+    /// pour qu'un template inattendu ne déclenche pas une exploration sans fin.
+    public static let maxBlockDepth = 5
+
+    /// Identifiants des bases contenues dans une page, **conteneurs de mise en
+    /// page traversés** (colonnes, bascules, encarts, listes).
+    ///
+    /// Deux garde-fous : la descente s'arrête aux pages enfants — ce sont d'autres
+    /// pages, les suivre reviendrait à explorer le workspace — et aux bases
+    /// elles-mêmes, dont les enfants sont des lignes et non des blocs. Les blocs
+    /// déjà vus sont mémorisés : un `synced_block` peut renvoyer vers un ancêtre.
+    public func childDatabaseIDs(ofPage pageID: String,
+                                 maxDepth: Int = NotionClient.maxBlockDepth) async throws -> [String] {
+        var found: [String] = []
+        var visited: Set<String> = [pageID]
+        try await collectDatabases(in: pageID, depth: 0, maxDepth: maxDepth,
+                                   visited: &visited, into: &found)
+        return found
+    }
+
+    private func collectDatabases(in blockID: String, depth: Int, maxDepth: Int,
+                                  visited: inout Set<String>, into found: inout [String]) async throws {
+        guard depth <= maxDepth else { return }
+
+        var descendants: [String] = []
         var cursor: String?
         repeat {
-            var path = NotionAPI.Path.blockChildren(pageID) + "?page_size=100"
+            var path = NotionAPI.Path.blockChildren(blockID) + "?page_size=100"
             if let cursor { path += "&start_cursor=\(cursor)" }
             let page: NotionList<NotionBlock> = try await get(path)
-            identifiers.append(contentsOf: page.results.filter(\.isChildDatabase).map(\.id))
+
+            for block in page.results {
+                guard visited.insert(block.id).inserted else { continue }
+                if block.isChildDatabase {
+                    found.append(block.id)
+                } else if block.shouldDescend {
+                    descendants.append(block.id)
+                }
+            }
             cursor = page.hasMore ? page.nextCursor : nil
         } while cursor != nil
-        return identifiers
+
+        // Descente après avoir épuisé la pagination du niveau courant : l'ordre
+        // des bases trouvées reste celui de la page, de haut en bas.
+        for descendant in descendants {
+            try await collectDatabases(in: descendant, depth: depth + 1, maxDepth: maxDepth,
+                                       visited: &visited, into: &found)
+        }
     }
 
     // MARK: - Écriture

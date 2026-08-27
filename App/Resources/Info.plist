@@ -28,7 +28,7 @@
 	     client_secret, lui, ne quitte jamais l'environnement Vercel. À renseigner
 	     avant le premier parcours OAuth. -->
 	<key>NotionClientID</key>
-	<string></string>
+	<string>3c9d872b-594c-818f-86fd-00373a50f13e</string>
 	<key>BackendBaseURL</key>
 	<string>https://auth.notitime.fr</string>
 	<key>CFBundleURLTypes</key>
