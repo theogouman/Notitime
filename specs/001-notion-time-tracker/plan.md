@@ -24,7 +24,7 @@ Application macOS résidente dans la barre de menus qui lit les tâches d'un wor
 
 **Performance Goals**: entrée visible dans Notion en moins de 10 s après la fin de session dans 95 % des cas (SC-003) ; session démarrée en moins de 5 s et 3 clics depuis l'icône (SC-002) ; écart de durée enregistrée inférieur à 2 s (SC-005) ; ouverture du menu perçue comme instantanée, la recherche filtrant le cache local sans requête (FR-013).
 
-**Constraints**: débit propre plafonné à 3 req/s toutes routes Notion confondues, `Retry-After` respecté (FR-029) ; au repos, aucune requête hors rafraîchissement périodique des tâches (SC-006) ; durées calculées sur une horloge monotone, début et fin stockés en UTC ; aucune donnée utilisateur côté serveur ; entitlements minimaux, pas de sandbox contournée ; interface en français avec chaînes externalisées.
+**Constraints**: `Notion-Version` épinglée à `2026-03-11` dans une constante unique, client écrit contre le modèle source de données (R-01) ; débit propre plafonné à 3 req/s toutes routes Notion confondues, `Retry-After` respecté (FR-029) ; au repos, aucune requête hors rafraîchissement périodique des tâches (SC-006) ; durées calculées sur une horloge monotone, début et fin stockés en UTC ; aucune donnée utilisateur côté serveur ; entitlements minimaux, pas de sandbox contournée ; interface en français avec chaînes externalisées.
 
 **Scale/Scope**: un workspace, un utilisateur par installation. Cache dimensionné pour les tâches ouvertes de l'utilisateur — quelques dizaines en pratique, la pagination étant suivie sans plafond (FR-009). File d'envoi dimensionnée pour absorber plusieurs jours hors-ligne. Périmètre applicatif : menu de la barre de menus, panneau de réglages, flux de connexion et d'assignation des bases.
 
@@ -42,9 +42,20 @@ Application macOS résidente dans la barre de menus qui lit les tâches d'un wor
 | VI. Pilotable par un agent | PASS | `project.yml` XcodeGen versionné, `.xcodeproj` généré et ignoré par git, build/test/packaging par scripts CLI. La logique métier est isolée dans `NotitimeCore`, testable par `swift test` sans Xcode. |
 | VII. Tests sur la logique, pas sur les pixels | PASS | Machine à états, file d'envoi, mapping et validation de schéma couverts par XCTest. Client Notion testé sur réponses enregistrées. Aucun test SwiftUI obligatoire. |
 
-### Écart à accepter avant `tasks`
+### Écart accepté — hébergement Vercel et usage commercial
 
-**Hébergement Vercel et usage commercial.** Les contraintes techniques de la constitution exigent un hébergement « gratuit et autorisant l'usage commercial ». Le contrat fige Vercel, dont l'offre Hobby — la seule gratuite — exclut l'usage commercial ; l'offre Pro est payante. Tant que la v1 est distribuée en interne à une équipe restreinte, sans vente ni licence, l'usage reste non commercial et l'écart est théorique. Il devient réel à la v2 (« licence par workspace » mentionnée dans le principe III et les hypothèses de la spec) : il faudra alors soit passer sur une offre Pro, soit migrer les trois fonctions vers un hébergeur autorisant le commercial en gratuit. Les fonctions étant sans état et écrites contre l'API HTTP standard, cette migration est peu coûteuse par construction. **Cet écart doit être explicitement accepté avant `tasks`.**
+**Statut : ACCEPTÉ le 2026-08-27**, conformément à la clause de gouvernance qui autorise un écart justifié par écrit et accepté avant `tasks`.
+
+**Nature de l'écart.** Les contraintes techniques de la constitution exigent un hébergement « gratuit et autorisant l'usage commercial ». Le contrat fige Vercel, dont l'offre Hobby — la seule gratuite — exclut l'usage commercial ; l'offre Pro est payante.
+
+**Motif de l'acceptation.** La distribution v1 est interne et non commerciale : bundle non signé remis à une équipe restreinte, sans vente, sans licence, sans facturation. Dans ce périmètre, l'usage du plan Hobby ne contrevient pas à ses propres conditions, et l'écart à la constitution reste sans effet pratique.
+
+**Conditions attachées à cette acceptation.**
+
+1. Les trois fonctions restent écrites contre l'API HTTP standard, sans dépendance à une API propriétaire de la plateforme — pas de stockage, de file, de cache ni d'autre primitive spécifique à l'hébergeur. Leur portabilité doit rester vérifiable à tout moment.
+2. Le passage en plan Pro, ou la migration vers un hébergeur autorisant l'usage commercial en gratuit, est un **prérequis explicite de la v2 « licence par workspace »**. Cette v2 ne peut pas être livrée sur le plan Hobby.
+
+Toute évolution qui rendrait la v1 commerciale — vente, licence payante, facturation — annule le motif d'acceptation et réactive l'écart.
 
 ### Re-contrôle après Phase 1
 

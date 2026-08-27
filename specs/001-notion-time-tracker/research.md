@@ -8,15 +8,31 @@ Chaque entrée suit le format Décision / Justification / Alternatives écartée
 
 ## R-01 — Version de l'API Notion et découpage bases / sources de données
 
-**Décision**: figer `Notion-Version` dans une constante unique de `NotitimeCore/Notion/NotionAPI.swift`, et écrire le client contre le modèle « base de données → source(s) de données » introduit par les versions récentes de l'API : une base peut exposer plusieurs sources, et c'est la source qui porte le schéma de propriétés et qui est interrogeable.
+**Décision** (tranchée, vérifiée contre la documentation officielle le 2026-08-27) : épingler `Notion-Version: 2026-03-11` dans une constante unique de `NotitimeCore/Notion/NotionAPI.swift`, et écrire tout le client contre le modèle **source de données** introduit par la version `2025-09-03`.
 
-**Justification**: la constitution impose une constante unique (`Notion-Version` figé). Le découpage bases/sources change l'endpoint d'interrogation et l'endroit où lire le schéma ; s'aligner dessus dès le départ évite une réécriture du client et du validateur de schéma. Le modèle mono-source couvre tous les cas de la spec, mais le code doit nommer explicitement la source retenue plutôt que de supposer qu'une base n'en a qu'une.
+**Ce que le modèle change, concrètement.** Depuis `2025-09-03`, une base Notion est un conteneur qui peut porter plusieurs sources de données. C'est la source, et non la base, qui porte le schéma de propriétés et qui est interrogeable. L'identifiant visible dans l'URL d'une base est celui du conteneur : il ne suffit pas à interroger quoi que ce soit. Une intégration restée sur `2022-06-28` fonctionne tant que chaque base connectée n'a qu'une source, et **casse dès qu'une base en acquiert une seconde** — un mode de défaillance différé, déclenché par une action côté Notion et non par un déploiement, donc particulièrement mauvais à découvrir en production.
 
-**À VÉRIFIER**: la chaîne exacte de `Notion-Version` à épingler, les chemins d'interrogation et de lecture de schéma, et le comportement pour une base multi-source. Si une base assignée expose plusieurs sources, la spec n'en prévoit pas la désambiguïsation — traiter comme une erreur de configuration explicite plutôt que d'en choisir une au hasard.
+**Pourquoi `2026-03-11` et non `2025-09-03`.** C'est la version stable la plus récente. Elle n'introduit que trois ruptures par rapport à `2025-09-03`, dont une seule nous concerne : le champ `archived` est renommé `in_trash` sur les pages, bases, blocs et sources de données ; `archived` subsiste comme alias déprécié. Les deux autres — le paramètre `after` de l'ajout de blocs enfants remplacé par un objet `position`, et le type de bloc `transcription` renommé `meeting_notes` — portent sur des surfaces que l'application n'utilise pas. Épingler la version la plus récente évite une migration supplémentaire dans les mois qui viennent, à coût nul aujourd'hui.
 
-**Alternatives écartées**: suivre automatiquement la dernière version de l'API (rejeté : la constitution exige une constante figée, et une bascule silencieuse casserait le mapping) ; supposer une source unique par base (rejeté : produit un échec obscur sur les bases multi-sources).
+**Correspondance endpoint par rôle** (méthodes et chemins vérifiés) :
 
----
+| Rôle | Appel |
+|---|---|
+| Résoudre les sources d'une base | `GET /v1/databases/{database_id}` → champ `data_sources[]`, chaque élément portant `id` et `name` |
+| Lire le schéma | `GET /v1/data_sources/{data_source_id}` → champ `properties` |
+| Interroger | `POST /v1/data_sources/{data_source_id}/query`, corps `filter` / `sorts` / `start_cursor` / `page_size`, pagination par `has_more` et `next_cursor` |
+| Créer une page | `POST /v1/pages` avec `parent: { "type": "data_source_id", "data_source_id": "..." }` |
+| Ajouter une propriété manquante | `PATCH /v1/data_sources/{data_source_id}`, corps `properties` |
+| Lister les sources accessibles | `POST /v1/search` avec `filter: { "property": "object", "value": "data_source" }` |
+| Publier un commentaire | `POST /v1/comments` avec `parent: { "page_id": "..." }` et `rich_text` |
+
+Deux conséquences à ne pas manquer. D'abord, `POST /v1/search` n'accepte plus `"database"` comme valeur de filtre : il retourne des objets `data_source`, chacun portant `parent.database_id` (la base conteneur) et `database_parent` (le parent de cette base). L'écran d'assignation des rôles liste donc naturellement des sources, et remonte à la base par ce champ. Ensuite, pour les propriétés de type relation, une requête sous `2025-09-03` et au-delà doit ne contenir **que** `data_source_id` — fournir `database_id` est refusé — même si les réponses portent désormais les deux.
+
+**Base à plusieurs sources.** L'application ne choisit pas à la place de l'utilisateur et n'échoue pas : quand une base assignée expose plusieurs sources, elle les présente et demande laquelle porte le rôle. Voir le cas limite correspondant dans la spec et la règle de validation dans `data-model.md`.
+
+**Sources** : [guide de migration 2025-09-03](https://developers.notion.com/docs/upgrade-guide-2025-09-03), [versionnement](https://developers.notion.com/reference/versioning), [guide de migration 2026-03-11](https://developers.notion.com/docs/upgrade-guide-2026-03-11), [interroger une source](https://developers.notion.com/reference/query-a-data-source), [mettre à jour une source](https://developers.notion.com/reference/update-a-data-source), [objet source de données](https://developers.notion.com/reference/data-source), [rechercher](https://developers.notion.com/reference/post-search), [créer un commentaire](https://developers.notion.com/reference/create-a-comment).
+
+**Alternatives écartées** : rester sur `2022-06-28` (rejeté : casse dès qu'une base connectée acquiert une seconde source, sans qu'aucun déploiement ne l'ait déclenché) ; épingler `2025-09-03` (rejeté : impose une migration supplémentaire à brève échéance pour aucun gain, les ruptures de `2026-03-11` ne nous touchant qu'en renommant `archived` en `in_trash`) ; suivre automatiquement la dernière version (rejeté : la constitution exige une constante figée, et une bascule silencieuse casserait le mapping).
 
 ## R-02 — Horloge des sessions
 
@@ -158,16 +174,15 @@ Chaque entrée suit le format Décision / Justification / Alternatives écartée
 
 ## R-15 — Découverte des bases après duplication du template
 
-**Décision**: quand l'autorisation renvoie un `duplicated_template_id`, parcourir les enfants de cette page pour y trouver les bases, puis assigner les rôles par validation de schéma — la base qui satisfait le schéma Time Entries prend ce rôle, etc. — et non par correspondance de titre. En l'absence de template dupliqué, lister les bases accessibles et pré-sélectionner celles dont le schéma correspond, l'utilisateur tranchant.
+**Décision**: quand l'autorisation renvoie un `duplicated_template_id`, parcourir les blocs enfants de cette page pour y relever les blocs `child_database`, résoudre chacun par `GET /v1/databases/{id}` pour obtenir ses `data_sources[]`, lire le schéma de chaque source par `GET /v1/data_sources/{id}`, puis assigner les rôles **par validation de schéma** — la source qui satisfait le schéma Time Entries prend ce rôle, etc. — et non par correspondance de titre. En l'absence de template dupliqué, lister les sources accessibles par `POST /v1/search` filtré sur `data_source` et pré-sélectionner celles dont le schéma correspond, l'utilisateur tranchant. Dans les deux cas, l'unité assignée à un rôle est une **source**, jamais une base ; la base conteneur est retenue en plus, via `parent.database_id`.
 
 **Justification**: les titres sont traduisibles et renommables par l'équipe, le schéma beaucoup moins. Piloter la découverte par le schéma rend le cas « second membre du workspace qui partage la page existante » (SC-007) automatique, et donne un diagnostic utile quand la validation échoue.
 
-**Alternatives écartées**: correspondance par titre (rejeté : casse dès qu'une base est renommée, ce que la spec liste explicitement comme cas limite) ; identifiants de bases codés en dur depuis le template public (rejeté : chaque duplication crée de nouveaux identifiants).
+**Alternatives écartées**: correspondance par titre (rejeté : casse dès qu'une base est renommée, ce que la spec liste explicitement comme cas limite) ; identifiants de bases codés en dur depuis le template public (rejeté : chaque duplication crée de nouveaux identifiants) ; supposer une source unique par base (rejeté : produit un échec obscur sur les bases multi-sources, que la spec traite désormais par un choix explicite de l'utilisateur).
 
 ---
 
 ## Points laissés au découpage en tâches
 
-- Format exact du titre généré des entrées de temps (FR-026) : à décider dans `data-model.md` et à figer avant l'implémentation.
 - Stratégie de purge du cache de tâches quand une tâche disparaît de Notion sans être terminée.
 - Contenu précis des messages d'état du menu (FR-015a), qui relève des chaînes localisées.

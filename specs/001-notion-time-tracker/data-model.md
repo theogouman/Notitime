@@ -32,14 +32,19 @@ Une instance par rôle : `tasks` (requis), `timeEntries` (requis), `projects` (o
 | Champ | Type | Notes |
 |---|---|---|
 | `role` | `Role` | `.tasks` / `.timeEntries` / `.projects` |
-| `databaseID` | `String` | |
-| `dataSourceID` | `String` | La source porte le schéma et est l'objet interrogé (R-01) |
-| `title` | `String` | Affichage dans les réglages |
+| `databaseID` | `String` | Conteneur. C'est l'identifiant visible dans l'URL Notion, mais il n'est **pas** interrogeable (R-01) |
+| `dataSourceID` | `String` | **L'unité réellement liée au rôle.** Porte le schéma, sert à interroger, à écrire et à créer les propriétés manquantes |
+| `dataSourceName` | `String` | Distingue les sources quand la base en porte plusieurs |
+| `title` | `String` | Titre de la base conteneur, affichage dans les réglages |
 | `propertyMap` | `[PropertyKey: PropertyRef]` | Mapping logique → propriété réelle |
 | `lastValidatedAt` | `Date?` | |
 | `validationState` | `enum` | `.valid` / `.missingProperties([PropertyKey])` / `.invalid(reason)` |
 
 `PropertyRef` retient `id`, `name` et `type` de la propriété Notion. L'`id` est stable au renommage : c'est lui qui sert aux requêtes, le `name` n'étant conservé que pour l'affichage et les messages de re-mapping.
+
+**Règle de liaison (R-01).** Un rôle est toujours lié à une source de données, jamais à une base. Quand une base assignée expose plusieurs sources, l'application les présente avec leur `dataSourceName` et demande laquelle porte le rôle ; elle ne choisit pas d'office et n'échoue pas. `databaseID` n'est conservé que pour l'affichage, pour ouvrir la base dans Notion et pour re-résoudre les sources lors d'une revalidation. Toute requête — interrogation, création de page, ajout de propriété — passe par `dataSourceID`.
+
+**Revalidation.** Si un `dataSourceID` mémorisé n'existe plus, l'application re-résout les sources de `databaseID` : s'il n'en reste qu'une, elle la propose ; s'il y en a plusieurs, elle redemande le choix ; s'il n'y en a aucune, la configuration passe en `.invalid`.
 
 ### `CachedTask` et `CachedProject`
 
@@ -125,6 +130,7 @@ Reproduit dans `docs/notion-schema.md`, qui fait foi pour la validation (FR-006)
 | Clé logique | Type Notion | Requis | Usage |
 |---|---|---|---|
 | `title` | `title` | oui | FR-012, FR-013 |
+| — | — | — | Les tâches à `in_trash` vrai sont exclues (champ renommé depuis `archived` en `2026-03-11`) |
 | `status` | `status` ou `select` | oui | FR-010 |
 | `assignee` | `people` | non | FR-011 |
 | `project` | `relation` → Projets | non | FR-012 |
@@ -151,11 +157,13 @@ Reproduit dans `docs/notion-schema.md`, qui fait foi pour la validation (FR-006)
 
 Les rollups fournis par le template (temps total par tâche, par projet) ne sont ni lus ni écrits par l'application.
 
+Le schéma est lu sur la **source**, jamais sur la base : `GET /v1/data_sources/{id}` renvoie le champ `properties` qui fait foi pour la validation (FR-006) et pour la proposition de création des propriétés manquantes, appliquée par `PATCH /v1/data_sources/{id}`.
+
 ---
 
 ## 3. Titre généré des entrées de temps
 
-**Décision** (point laissé ouvert par R-15) : `<Titre de la tâche> — <durée> min — <date et heure de début, format court localisé>`, par exemple `Refonte facturation — 25 min — 27/08/2026 14:30`. Le titre est tronqué à 200 caractères, la troncature portant sur le titre de la tâche.
+**Décision** : `<Titre de la tâche> — <durée> min — <date et heure de début, format court localisé>`, par exemple `Refonte facturation — 25 min — 27/08/2026 14:30`. Le titre est tronqué à 200 caractères, la troncature portant sur le titre de la tâche.
 
 **Justification** : le titre est ce que l'utilisateur voit dans une vue liste Notion ; y placer d'abord la tâche rend la lecture utile même quand la colonne relation est masquée. Durée et heure lèvent l'ambiguïté entre plusieurs sessions du même jour sur la même tâche. Le format est une chaîne localisée, pas une concaténation codée en dur.
 
