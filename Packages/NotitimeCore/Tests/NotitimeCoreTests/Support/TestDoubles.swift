@@ -194,3 +194,44 @@ actor CancellationAwareTransport: HTTPTransport {
         return try await inner.send(request)
     }
 }
+
+/// Magasin qui compte ses **lectures**.
+///
+/// Chaque lecture correspond, sur la machine, à un `SecItemCopyMatching` — donc
+/// potentiellement à une demande de mot de passe du trousseau. Compter est la
+/// seule façon de vérifier qu'une session complète n'en provoque qu'une.
+actor CountingTokenStore: TokenStore {
+    private var access: String?
+    private var refresh: String?
+    private(set) var accessReads = 0
+    private(set) var refreshReads = 0
+    private(set) var writes = 0
+
+    init(access: String? = nil, refresh: String? = nil) {
+        self.access = access
+        self.refresh = refresh
+    }
+
+    var reads: Int { accessReads + refreshReads }
+
+    func accessToken() async throws -> String? {
+        accessReads += 1
+        return access
+    }
+
+    func refreshToken() async throws -> String? {
+        refreshReads += 1
+        return refresh
+    }
+
+    func store(accessToken: String, refreshToken: String) async throws {
+        writes += 1
+        access = accessToken
+        refresh = refreshToken
+    }
+
+    func clear() async throws {
+        access = nil
+        refresh = nil
+    }
+}

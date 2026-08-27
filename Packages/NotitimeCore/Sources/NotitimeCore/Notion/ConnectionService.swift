@@ -23,6 +23,21 @@ public actor ConnectionService: AuthorizationProvider {
     private let log: SessionLog?
     private var onDisconnect: (@Sendable () async -> Void)?
 
+    /// Jetons gardés en mémoire pour la durée de la session.
+    ///
+    /// Le trousseau reste leur seule persistance (principe III) : la mémoire
+    /// n'en est que le relais. Sans ce relais, chaque requête HTTP provoquait un
+    /// `SecItemCopyMatching`, donc — tant que l'identité de code n'est pas
+    /// stable — une demande de mot de passe. Un cycle ordinaire en comptait six,
+    /// et les réessais de la file en ajoutaient à chaque tentative.
+    private var cachedAccessToken: String?
+    private var cachedRefreshToken: String?
+
+    /// Lectures en cours, partagées entre appelants simultanés : la file d'envoi
+    /// et le cache de tâches démarrent ensemble et demanderaient sinon deux fois.
+    private var pendingAccessRead: Task<String?, Error>?
+    private var pendingRefreshRead: Task<String?, Error>?
+
     /// Métadonnées de la dernière autorisation, à persister par l'appelant.
     public private(set) var authorization: NotionAuthorization?
     public private(set) var state: ConnectionState = .disconnected
@@ -47,6 +62,7 @@ public actor ConnectionService: AuthorizationProvider {
                               message: "réponse d'autorisation sans refresh_token")
         }
         try await tokens.store(accessToken: result.accessToken, refreshToken: refresh)
+        remember(access: result.accessToken, refresh: refresh)
         authorization = result
         state = .connected(workspaceName: result.workspaceName ?? "",
                            ownerName: result.owner?.user?.name ?? "")
@@ -57,7 +73,12 @@ public actor ConnectionService: AuthorizationProvider {
     // MARK: - AuthorizationProvider
 
     public func bearerToken() async throws -> String {
-        guard let token = try await tokens.accessToken() else { throw NotConnected() }
+        if let cachedAccessToken { return cachedAccessToken }
+        guard let token = try await readAccessToken() else { throw NotConnected() }
+        cachedAccessToken = token
+        // Journalisé parce que c'est cette ligne qui doit rester unique : une
+        // seconde occurrence sans reconnexion signalerait le retour du défaut.
+        await log?.log(.auth, "jeton lu au trousseau")
         return token
     }
 
@@ -68,7 +89,7 @@ public actor ConnectionService: AuthorizationProvider {
     /// la file d'envoi n'est pas vidée — la reconnexion la libérera.
     @discardableResult
     public func refreshAccessToken() async throws -> Bool {
-        guard let refreshToken = try await tokens.refreshToken() else {
+        guard let refreshToken = try await currentRefreshToken() else {
             await markNeedsReconnection(reason: "aucun refresh token")
             return false
         }
@@ -77,6 +98,7 @@ public actor ConnectionService: AuthorizationProvider {
             let renewed = try await backend.refresh(refreshToken: refreshToken)
             try await tokens.store(accessToken: renewed.accessToken,
                                    refreshToken: renewed.refreshToken ?? refreshToken)
+            remember(access: renewed.accessToken, refresh: renewed.refreshToken ?? refreshToken)
             authorization = renewed
             await log?.log(.auth, "token rafraîchi")
             return true
@@ -108,6 +130,7 @@ public actor ConnectionService: AuthorizationProvider {
     /// entrées sont encore en attente (FR-008).
     public func disconnect() async throws {
         try await tokens.clear()
+        forget()
         authorization = nil
         state = .disconnected
         await log?.log(.auth, "déconnexion")
@@ -116,7 +139,51 @@ public actor ConnectionService: AuthorizationProvider {
 
     private func markNeedsReconnection(reason: String) async {
         try? await tokens.clear()
+        forget()
         state = .needsReconnection
         await log?.log(.auth, "reconnexion nécessaire : \(reason)")
+    }
+
+    // MARK: - Relais mémoire du trousseau
+
+    /// Le jeton vient d'être écrit : le relire serait une sollicitation de plus
+    /// pour une valeur déjà connue.
+    private func remember(access: String, refresh: String) {
+        cachedAccessToken = access
+        cachedRefreshToken = refresh
+    }
+
+    /// Déconnexion ou révocation : le relais est vidé en même temps que le
+    /// trousseau, sans quoi l'application continuerait d'agir au nom d'un compte
+    /// qui n'est plus le sien.
+    private func forget() {
+        cachedAccessToken = nil
+        cachedRefreshToken = nil
+    }
+
+    private func currentRefreshToken() async throws -> String? {
+        if let cachedRefreshToken { return cachedRefreshToken }
+        let token = try await readRefreshToken()
+        cachedRefreshToken = token
+        if token != nil { await log?.log(.auth, "refresh token lu au trousseau") }
+        return token
+    }
+
+    /// Coalesce les lectures : les appelants arrivés pendant qu'une lecture est
+    /// en cours attendent son résultat au lieu d'en déclencher une seconde.
+    private func readAccessToken() async throws -> String? {
+        if let pendingAccessRead { return try await pendingAccessRead.value }
+        let read = Task { [tokens] in try await tokens.accessToken() }
+        pendingAccessRead = read
+        defer { pendingAccessRead = nil }
+        return try await read.value
+    }
+
+    private func readRefreshToken() async throws -> String? {
+        if let pendingRefreshRead { return try await pendingRefreshRead.value }
+        let read = Task { [tokens] in try await tokens.refreshToken() }
+        pendingRefreshRead = read
+        defer { pendingRefreshRead = nil }
+        return try await read.value
     }
 }

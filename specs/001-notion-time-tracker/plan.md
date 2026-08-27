@@ -184,6 +184,17 @@ Conséquences pratiques :
   côté Notion (`invalid_grant`) ou déconnexion volontaire, jamais sur un échec
   d'accès au trousseau — sans quoi un clic sur « Refuser » obligerait à refaire
   tout le parcours OAuth. Deux tests le verrouillent dans `AuthTests`.
+- **Une sollicitation par lancement, pas une par requête.** Le trousseau est la
+  seule persistance des jetons (principe III), mais `ConnectionService` en garde
+  un relais en mémoire pour la durée de la session : la lecture a lieu au premier
+  besoin, ou jamais si la connexion vient d'écrire les jetons. Sans ce relais,
+  chaque requête HTTP déclenchait un `SecItemCopyMatching` — six pour un cycle
+  ordinaire (tâches paginées, envoi, réessai), et davantage à chaque réessai de la
+  file : la demande de mot de passe revenait en boucle et rendait l'application
+  inutilisable. Les lectures simultanées sont mutualisées, le relais est vidé à la
+  déconnexion comme à la révocation, et remplacé par le jeton renouvelé après un
+  rafraîchissement. `KeychainAccessTests` compte les lectures sur un cycle complet ;
+  le journal porte une ligne `jeton lu au trousseau` qui doit rester unique.
 
 **Les notifications système exigent une identité de code.**
 `UNUserNotificationCenter` refuse d'accorder une autorisation à un bundle sans
