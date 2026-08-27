@@ -142,6 +142,29 @@ docs/notion-schema.md              # Schéma attendu des bases Notion
 
 **Structure Decision**: dépôt unique à trois racines de code. `Packages/NotitimeCore` concentre tout ce qui est testable sans machine réelle et n'importe ni SwiftUI ni AppKit ; il expose quatre protocoles (`TokenStore`, `InactivityMonitor`, `SleepObserver`, `HTTPTransport`) que `App/System/` implémente avec les frameworks système. Cette frontière est ce qui rend le principe VII applicable : les tests injectent une horloge contrôlée, un transport rejouant des fixtures et des sondes système simulées, sans jamais toucher au Keychain, au réseau ni aux événements d'entrée réels. `backend/` est indépendant du code Swift et se déploie séparément.
 
+## Comportements système attendus — à ne pas prendre pour des défauts
+
+**Le flux OAuth s'ouvre dans Safari, pas dans le navigateur par défaut.**
+`ASWebAuthenticationSession` délègue la présentation au système, qui utilise son
+propre moteur web — Safari sur macOS — indépendamment du navigateur défini par
+défaut dans les Réglages Système. C'est le comportement voulu par Apple, et il
+n'est pas configurable : l'API n'expose aucun moyen de choisir le navigateur.
+
+C'est aussi ce qui fait sa valeur. La session est gérée par le système, l'app ne
+voit jamais la page d'autorisation ni ce que l'utilisateur y saisit, et le flux
+ne peut pas être détourné par une extension installée dans un autre navigateur.
+
+Conséquence pratique : l'utilisateur doit être connecté à Notion **dans Safari**
+pour ne pas ressaisir ses identifiants. C'est la raison de
+`prefersEphemeralWebBrowserSession = false` : une session éphémère l'obligerait à
+se reconnecter à Notion à chaque autorisation.
+
+La seule alternative serait d'ouvrir l'URL dans le navigateur par défaut avec
+`NSWorkspace` et de recevoir le callback par le scheme `notitime://`. Elle est
+écartée : elle perd l'isolation de la session, expose la page d'autorisation aux
+extensions du navigateur, et laisse n'importe quelle application ayant enregistré
+le scheme intercepter le retour sans que le système n'arbitre.
+
 ## Dette technique assumée
 
 **Mode langage Swift 5 sur toolchain 6.3.3.** Le package est déclaré en `swift-tools-version:5.10`, conformément au socle « Swift 5.10 minimum » des contraintes techniques. La toolchain réellement installée est la 6.3.3, mais la déclaration place la compilation en **mode langage Swift 5** : la vérification stricte de la concurrence n'est donc pas appliquée, et les annotations `Sendable` ne sont pas contrôlées par le compilateur.
