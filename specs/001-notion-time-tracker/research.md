@@ -84,7 +84,11 @@ Deux conséquences à ne pas manquer. D'abord, `POST /v1/search` n'accepte plus 
 
 **Justification**: c'est la traduction exacte de FR-028. Écrire `indéterminée` avant l'appel est le point critique : si le processus meurt pendant la requête, l'état persistant dit déjà qu'on ne sait pas, et le réessai vérifiera. Écrire l'issue après coup laisserait une fenêtre où un crash produirait un doublon. Une erreur HTTP explicite de Notion prouve qu'aucune page n'a été créée et dispense de la vérification, ce qui garde le cas nominal à une requête.
 
-**Alternatives écartées**: vérification systématique (rejeté par la clarification : double le coût API de chaque envoi) ; en-tête d'idempotence côté Notion (rejeté : l'API n'en offre pas de garantie contractuelle).
+**Archivage et corbeille.** La vérification par identifiant local interroge la source **deux fois** — sans `is_archived`, puis avec `is_archived: true` — afin qu'une entrée simplement archivée compte comme existante et ne soit pas recréée. Une entrée mise en corbeille, elle, n'est retournée par aucune interrogation et `in_trash` n'est pas un sélecteur de requête : elle est indétectable par ce chemin.
+
+**Limite bornée, assumée.** Il subsiste donc une fenêtre où un réessai peut recréer une entrée : il faut que la tentative précédente ait eu une issue *indéterminée* — la réponse perdue — **et** que l'utilisateur ait mis la page à la corbeille avant le réessai. Hors de cette conjonction, aucune résurrection n'est possible : dès qu'une création est confirmée, l'entrée quitte la file et n'est plus jamais réessayée. Fermer cette fenêtre demanderait de retenir l'identifiant de page avant de savoir si la création a abouti, ce que l'API ne permet pas. La limite est documentée plutôt que masquée.
+
+**Alternatives écartées**: vérification systématique (rejeté par la clarification : double le coût API de chaque envoi) ; en-tête d'idempotence côté Notion (rejeté : l'API n'en offre pas de garantie contractuelle) ; interroger la corbeille pour détecter une entrée supprimée (rejeté : impossible, `in_trash` n'est pas interrogeable).
 
 ---
 

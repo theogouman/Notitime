@@ -22,7 +22,7 @@ Application macOS résidente dans la barre de menus qui lit les tâches d'un wor
 
 **Project Type**: application de bureau native + package Swift local + trois fonctions serverless, dans un dépôt unique.
 
-**Performance Goals**: entrée visible dans Notion en moins de 10 s après la fin de session dans 95 % des cas (SC-003) ; session démarrée en moins de 5 s et 3 clics depuis l'icône (SC-002) ; écart de durée enregistrée inférieur à 2 s (SC-005) ; ouverture du menu perçue comme instantanée, la recherche filtrant le cache local sans requête (FR-013).
+**Performance Goals**: entrée visible dans Notion en moins de 10 s après la fin de session dans 95 % des cas (SC-003) ; session démarrée en moins de 5 s et 3 clics depuis l'icône (SC-002) ; écart de durée enregistrée inférieur à 2 s (SC-005) ; ouverture du menu et sélection d'une tâche tenant dans le budget de SC-002 — moins de 5 s et au plus 3 clics depuis l'icône — la recherche filtrant le cache local sans requête (FR-013).
 
 **Constraints**: `Notion-Version` épinglée à `2026-03-11` dans une constante unique, client écrit contre le modèle source de données (R-01) ; débit propre plafonné à 3 req/s toutes routes Notion confondues, `Retry-After` respecté (FR-029) ; au repos, aucune requête hors rafraîchissement périodique des tâches (SC-006) ; durées calculées sur une horloge monotone, début et fin stockés en UTC ; aucune donnée utilisateur côté serveur ; entitlements minimaux, pas de sandbox contournée ; interface en français avec chaînes externalisées.
 
@@ -66,6 +66,16 @@ Les sept principes restent PASS après conception. Trois points relevés par la 
 - **Une modification du contrat fourni.** La liste des capacités Notion du contrat n'incluait pas l'insertion de commentaires, que FR-026a rend obligatoire. La ligne a été complétée dans `contracts/oauth-backend.md` ; c'est la seule retouche apportée au contrat.
 
 L'écart Vercel reste entier et **conditionne le passage à `tasks`**.
+
+### Écart accepté — développement de la feature 001 sur `main`
+
+**Statut : ACCEPTÉ le 2026-08-27.**
+
+**Nature de l'écart.** Le workflow de développement de la constitution impose que chaque feature soit développée sur sa branche et mergée quand `converge` rapporte Converged. La feature 001 est développée directement sur `main`.
+
+**Motif de l'acceptation.** Dépôt initial, contributeur unique, aucune divergence à gérer : une branche sans point de divergence n'apporte ici ni isolation ni revue, seulement une étape de merge sans contenu.
+
+**Portée de la dérogation.** Elle est limitée à la feature 001. La règle une-branche-par-feature s'applique **à partir de la feature 002, ou dès qu'un second contributeur rejoint le dépôt** — le premier des deux qui survient.
 
 ## Project Structure
 

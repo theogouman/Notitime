@@ -51,6 +51,9 @@ Tests exécutés par `swift test` sur `NotitimeCore`, sans réseau ni interface.
 | La recherche est insensible à la casse et aux accents et n'émet aucune requête | Cache pré-rempli, transport qui échoue sur tout appel | US3.4, FR-013 |
 | Les tâches terminées sont exclues selon la configuration | Fixtures de statuts variés | FR-010 |
 | Le journal ne contient jamais de token, de code ni de titre de tâche | Scénario complet puis inspection du fichier | FR-037 |
+| L'écart entre durée enregistrée et durée réelle reste sous 2 s | Horloge contrôlée, deux modes, pauses et inactivité retranchée | SC-005 |
+| Une entrée archivée est détectée et non recréée | Double interrogation, seconde avec `is_archived: true` | FR-028, R-06 |
+| 100 sessions en conditions dégradées : rien de perdu, rien de dupliqué | Campagne automatisée sur `Outbox` avec transport de test | SC-004 |
 
 Les fonctions serverless ont leur propre suite dans `backend/tests/`, couvrant les cinq cas du contrat OAuth : `invalid_verifier`, annulation utilisateur, appel sans paramètre, échange nominal, relais d'un `invalid_grant`.
 
@@ -66,6 +69,7 @@ Les fonctions serverless ont leur propre suite dans `backend/tests/`, couvrant l
 6. **Dégradé réseau.** Couper le Wi-Fi, terminer deux sessions, rétablir. Attendu : « 2 entrées en attente » dans le menu, puis les deux entrées arrivent dans l'ordre, une seule fois chacune, indicateur revenu à zéro (US6, SC-004).
 7. **États du menu.** Ouvrir le menu pendant le premier chargement, puis avec un filtre sans résultat, puis Wi-Fi coupé. Attendu : indicateur de progression, message distinguant le filtre trop restrictif, puis cache utilisable avec l'heure de dernière synchronisation (FR-015a).
 8. **Repos.** Laisser l'app ouverte sans session pendant 30 min en observant le trafic réseau. Attendu : rien d'autre que le rafraîchissement périodique des tâches (SC-006).
+9. **Rapidité de démarrage.** Sur une tâche déjà utilisée, chronométrer du clic sur l'icône au démarrage effectif de la session, en comptant les clics. Attendu : moins de 5 secondes et au plus 3 clics (SC-002).
 
 ## Déploiement du backend
 
@@ -80,4 +84,4 @@ Les quatre variables du contrat OAuth doivent être définies et chiffrées côt
 
 ## Critère de sortie
 
-La feature est prête pour `converge` quand la suite de tests passe sans réseau, que les huit validations manuelles sont observées, et qu'aucun warning Swift n'est produit par `scripts/build.sh`.
+La feature est prête pour `converge` quand la suite de tests passe sans réseau, que les neuf validations manuelles sont observées, et qu'aucun warning Swift n'est produit par `scripts/build.sh`.

@@ -22,9 +22,11 @@ Liste close des appels que `NotitimeCore` adresse à Notion. Tout appel hors de 
 | Résoudre les sources d'une base | `GET /v1/databases/{database_id}` → `data_sources[]` (`id`, `name`) | Après découverte, et à chaque revalidation d'un rôle | FR-004, FR-007 |
 | Lire le schéma d'une source | `GET /v1/data_sources/{data_source_id}` → `properties` | Validation, à chaque assignation ou changement | FR-006, FR-007 |
 | Interroger une source | `POST /v1/data_sources/{data_source_id}/query` | Rafraîchissement des tâches et des projets | FR-009 |
-| Interroger Time Entries par `localID` | `POST /v1/data_sources/{data_source_id}/query` filtré sur la propriété Identifiant local | **Uniquement** avant un réessai d'issue indéterminée | FR-028, R-06 |
+| Interroger Time Entries par `localID` | `POST /v1/data_sources/{data_source_id}/query` filtré sur la propriété Identifiant local, **exécuté deux fois** : sans `is_archived` puis avec `is_archived: true` | **Uniquement** avant un réessai d'issue indéterminée | FR-028, R-06 |
 
 Le filtre de l'interrogation des tâches porte le statut non terminé et, quand la propriété Personne est mappée, l'utilisateur courant — poussés côté API et non appliqués après coup (FR-009). La pagination se suit par `start_cursor` / `page_size` en requête et `has_more` / `next_cursor` en réponse, jusqu'à épuisement, sans plafond.
+
+**Archivage, corbeille et idempotence.** `is_archived` et `in_trash` sont deux notions distinctes : `is_archived` marque une page archivée et est le seul sélecteur accepté en corps de requête d'interrogation (défaut faux) ; `in_trash` marque la mise en corbeille et n'est pas interrogeable. Conséquences pour la vérification d'idempotence : une entrée seulement **archivée** doit compter comme existante, d'où la double interrogation ci-dessus, sans quoi un réessai la recréerait. Une entrée mise en **corbeille** est invisible à l'interrogation et ne peut pas être détectée — voir la limite bornée documentée en R-06.
 
 Les éléments dont `in_trash` est vrai sont exclus. Ce champ s'appelait `archived` avant `2026-03-11`, où il a été renommé sur les pages, bases, blocs et sources ; `archived` subsiste comme alias déprécié et ne doit pas être utilisé.
 

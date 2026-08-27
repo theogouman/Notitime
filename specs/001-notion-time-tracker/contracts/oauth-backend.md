@@ -16,14 +16,14 @@ App                          Navigateur (ASWebAuthenticationSession)        Back
  |                                                                                                            |
  | 2. ouvre https://api.notion.com/v1/oauth/authorize                                                         |
  |      ?client_id=...&response_type=code&owner=user                                                          |
- |      &redirect_uri=https://<host>/api/notion/callback&state=<state>                                        |
+ |      &redirect_uri=https://auth.notitime.fr/api/notion/callback&state=<state>                                        |
  |                                     |---- l'utilisateur autorise / duplique le template ------------------>|
- |                                     |<--- 302 https://<host>/api/notion/callback?code=..&state=.. ---------|
+ |                                     |<--- 302 https://auth.notitime.fr/api/notion/callback?code=..&state=.. ---------|
  |                                     |----> GET /api/notion/callback ---------->|                           |
  |                                     |<---- 302 notitime://auth?code=..&state=..|  (aucun échange ici)      |
  | 3. reçoit notitime://auth, vérifie state == sha256(verifier)                                               |
  |                                                                                                            |
- | 4. POST https://<host>/api/notion/token {code, state, verifier} --------------->|                          |
+ | 4. POST https://auth.notitime.fr/api/notion/token {code, state, verifier} --------------->|                          |
  |                                                                                 | vérifie sha256(verifier)==state
  |                                                                                 |-- POST /v1/oauth/token -->|
  |                                                                                 |   Basic client_id:secret  |
@@ -79,7 +79,7 @@ Comportement : appelle `POST https://api.notion.com/v1/oauth/token` avec le mêm
 |---|---|
 | `NOTION_CLIENT_ID` | depuis le portail développeur Notion |
 | `NOTION_CLIENT_SECRET` | idem, jamais commité |
-| `NOTION_REDIRECT_URI` | `https://<host>/api/notion/callback`, identique caractère pour caractère à celle déclarée chez Notion |
+| `NOTION_REDIRECT_URI` | `https://auth.notitime.fr/api/notion/callback`, identique caractère pour caractère à celle déclarée chez Notion |
 | `APP_CALLBACK_SCHEME` | `notitime` |
 
 En local : `.env.local` (ignoré par git), `vercel env pull`.

@@ -95,7 +95,8 @@ Trois racines de code, conformément à la décision de structure de `plan.md` :
 - [ ] T040 [US1] Implémenter le listage des sources accessibles par `POST /v1/search` filtré sur `data_source` et la pré-sélection par schéma dans `RoleDiscovery.swift` (FR-005)
 - [ ] T041 [US1] Implémenter l'écran de connexion et d'assignation des rôles dans `App/Onboarding/` : liste des sources, choix de source pour une base multi-sources, propriétés manquantes et proposition de création (US1.2, US1.3, FR-006a)
 - [ ] T042 [US1] Implémenter l'affichage de l'état connecté (nom d'utilisateur, workspace, rôles liés) et la déconnexion avec avertissement si des entrées sont en attente dans `App/Onboarding/ConnectionStatusView.swift` (US1.1, FR-008)
-- [ ] T043 [US1] Rédiger `docs/notion-schema.md` — schéma attendu des trois bases, conformément à `data-model.md` §2 (exigence du workflow de la constitution)
+- [ ] T043 [US1] Implémenter la revalidation des rôles au démarrage de l'application — schéma de chaque source liée, routage vers l'écran de re-mapping en cas d'échec — dans `App/Onboarding/StartupValidation.swift` (cas limite « template modifié », FR-006, FR-007)
+- [ ] T044 [US1] Rédiger `docs/notion-schema.md` — schéma attendu des trois bases, conformément à `data-model.md` §2 (exigence du workflow de la constitution)
 
 **Checkpoint**: la connexion et la configuration fonctionnent de bout en bout, indépendamment de toute session.
 
@@ -109,24 +110,26 @@ Trois racines de code, conformément à la décision de structure de `plan.md` :
 
 ### Tests for User Story 2 ⚠️
 
-- [ ] T044 [P] [US2] Écrire les tests de la machine à états Pomodoro dans `Packages/NotitimeCore/Tests/NotitimeCoreTests/PomodoroMachineTests.swift` : arrivée à zéro ⇒ « Complété » de la durée cible ; une seule session active à la fois ; démarrage refusé sans tâche (US2.2, US2.5, US2.6, FR-015, FR-017)
-- [ ] T045 [P] [US2] Écrire le test de la règle des 60 secondes dans `PomodoroMachineTests.swift` : aucune entrée produite en deçà (FR-023)
-- [ ] T046 [P] [US2] Écrire les tests de la série et des pauses dans `PomodoroMachineTests.swift` : pause longue au N-ième pomodoro allé à son terme, aucune entrée pour une pause (US2.3, US2.4, FR-020)
-- [ ] T047 [P] [US2] Écrire les tests de composition d'une entrée dans `Packages/NotitimeCore/Tests/NotitimeCoreTests/OutboxCompositionTests.swift` : les neuf propriétés de FR-026, `parent.data_source_id`, relation ne portant que `data_source_id`, titre généré au format de `data-model.md` §3
-- [ ] T048 [P] [US2] Écrire le test de persistance à chaque transition dans `PomodoroMachineTests.swift` : `ActiveSession` réécrite avant tout retour de contrôle (FR-022)
+- [ ] T045 [P] [US2] Écrire les tests de la machine à états Pomodoro dans `Packages/NotitimeCore/Tests/NotitimeCoreTests/PomodoroMachineTests.swift` : arrivée à zéro ⇒ « Complété » de la durée cible ; une seule session active à la fois ; démarrage refusé sans tâche (US2.2, US2.5, US2.6, FR-015, FR-017)
+- [ ] T046 [P] [US2] Écrire le test de la règle des 60 secondes dans `PomodoroMachineTests.swift` : aucune entrée produite en deçà (FR-023)
+- [ ] T047 [P] [US2] Écrire les tests de la série et des pauses dans `PomodoroMachineTests.swift` : pause longue au N-ième pomodoro allé à son terme, aucune entrée pour une pause (US2.3, US2.4, FR-020)
+- [ ] T048 [P] [US2] Écrire les tests de composition d'une entrée dans `Packages/NotitimeCore/Tests/NotitimeCoreTests/OutboxCompositionTests.swift` : les neuf propriétés de FR-026, `parent.data_source_id`, relation ne portant que `data_source_id`, titre généré au format de `data-model.md` §3
+- [ ] T049 [P] [US2] Écrire le test de persistance à chaque transition dans `PomodoroMachineTests.swift` : `ActiveSession` réécrite avant tout retour de contrôle (FR-022)
 
 ### Implementation for User Story 2
 
-- [ ] T049 [US2] Implémenter `SessionMachine` — états, événements nommés, horloge injectée, persistance à chaque transition — dans `Packages/NotitimeCore/Sources/NotitimeCore/Session/SessionMachine.swift` (FR-016 à FR-022)
-- [ ] T050 [US2] Implémenter le mode Pomodoro — compte à rebours, arrivée à terme, écourtement, série consécutive, absence de pause manuelle — dans `Packages/NotitimeCore/Sources/NotitimeCore/Session/PomodoroMode.swift` (FR-018, FR-019, FR-020)
-- [ ] T051 [US2] Implémenter la composition d'une `OutboxEntry` à partir d'une session éligible dans `Packages/NotitimeCore/Sources/NotitimeCore/Outbox/EntryComposer.swift` (FR-023, FR-026)
-- [ ] T052 [US2] Implémenter l'envoi d'une entrée — `POST /v1/pages` avec `parent.data_source_id`, retrait de la file sur confirmation seulement — dans `Packages/NotitimeCore/Sources/NotitimeCore/Outbox/Outbox.swift` (FR-027)
-- [ ] T053 [US2] Implémenter la publication du commentaire après création réussie, en best-effort, dans `Outbox.swift` : jamais de remise en file, `403` de capacité absente traité comme abandon du seul commentaire (FR-026a)
-- [ ] T054 [US2] Implémenter l'affichage du compte à rebours et du nom court de la tâche dans la barre de menus dans `App/MenuBar/` (FR-025)
-- [ ] T055 [US2] Implémenter les notifications et le son de fin de pomodoro et de pause dans `App/System/NotificationPresenter.swift` (FR-032)
-- [ ] T056 [US2] Implémenter la proposition de pause après un pomodoro allé à son terme, et l'interruption de pause pour repartir immédiatement, dans `App/MenuBar/` (US2.2, cas limite pause longue)
+- [ ] T050 [US2] Implémenter `SessionMachine` — états, événements nommés, horloge injectée, persistance à chaque transition — dans `Packages/NotitimeCore/Sources/NotitimeCore/Session/SessionMachine.swift` (FR-016 à FR-022)
+- [ ] T051 [US2] Implémenter le mode Pomodoro — compte à rebours, arrivée à terme, écourtement, série consécutive, absence de pause manuelle — dans `Packages/NotitimeCore/Sources/NotitimeCore/Session/PomodoroMode.swift` (FR-018, FR-019, FR-020)
+- [ ] T052 [US2] Implémenter la composition d'une `OutboxEntry` à partir d'une session éligible dans `Packages/NotitimeCore/Sources/NotitimeCore/Outbox/EntryComposer.swift` (FR-023, FR-026)
+- [ ] T053 [US2] Implémenter l'envoi d'une entrée — `POST /v1/pages` avec `parent.data_source_id`, retrait de la file sur confirmation seulement — dans `Packages/NotitimeCore/Sources/NotitimeCore/Outbox/Outbox.swift` (FR-027)
+- [ ] T054 [US2] Implémenter la publication du commentaire après création réussie, en best-effort, dans `Outbox.swift` : jamais de remise en file, `403` de capacité absente traité comme abandon du seul commentaire (FR-026a)
+- [ ] T055 [US2] Implémenter le chargement minimal des tâches — interrogation de la source liée au rôle Tâches, sans filtre Personne ni recherche, pagination simple — dans `Packages/NotitimeCore/Sources/NotitimeCore/Notion/TaskFetch.swift` (remplacé par `TaskCache` en US3)
+- [ ] T056 [US2] Implémenter la liste brute de sélection de tâche dans le menu — ni recherche, ni section « Récentes », ni filtre — dans `App/MenuBar/BasicTaskPicker.swift` (FR-015 ; remplacée par la liste confortable de l'US3)
+- [ ] T057 [US2] Implémenter l'affichage du compte à rebours et du nom court de la tâche dans la barre de menus dans `App/MenuBar/` (FR-025)
+- [ ] T058 [US2] Implémenter les notifications et le son de fin de pomodoro et de pause dans `App/System/NotificationPresenter.swift` (FR-032)
+- [ ] T059 [US2] Implémenter la proposition de pause après un pomodoro allé à son terme, et l'interruption de pause pour repartir immédiatement, dans `App/MenuBar/` (US2.2, cas limite pause longue)
 
-**Checkpoint**: MVP atteignable — connexion, sélection d'une tâche, pomodoro, entrée dans Notion.
+**Checkpoint**: MVP démontrable de bout en bout — ouvrir le menu, choisir une tâche dans la liste brute, lancer un pomodoro, voir l'entrée arriver dans Notion. Les validations manuelles 1 à 4 de `quickstart.md` sont exécutables à ce stade.
 
 ---
 
@@ -138,19 +141,19 @@ Trois racines de code, conformément à la décision de structure de `plan.md` :
 
 ### Tests for User Story 3 ⚠️
 
-- [ ] T057 [P] [US3] Écrire les tests du cache de tâches dans `Packages/NotitimeCore/Tests/NotitimeCoreTests/TaskCacheTests.swift` : filtres poussés côté API, pagination suivie jusqu'à `has_more` faux, aucun plafond, exclusion des `in_trash` (FR-009)
-- [ ] T058 [P] [US3] Écrire les tests de filtrage par statut et par personne dans `TaskCacheTests.swift` : valeurs terminées configurées, tâches non assignées selon le réglage (US3.1 à US3.3, FR-010, FR-011)
-- [ ] T059 [P] [US3] Écrire le test de recherche dans `TaskCacheTests.swift` : insensible à la casse et aux accents, aucune requête réseau émise (US3.4, FR-013)
-- [ ] T060 [P] [US3] Écrire le test des tâches récentes dans `TaskCacheTests.swift` : en tête hors filtre courant, masquées si terminées (US3.5, FR-014)
+- [ ] T060 [P] [US3] Écrire les tests du cache de tâches dans `Packages/NotitimeCore/Tests/NotitimeCoreTests/TaskCacheTests.swift` : filtres poussés côté API, pagination suivie jusqu'à `has_more` faux, aucun plafond, exclusion des `in_trash` (FR-009)
+- [ ] T061 [P] [US3] Écrire les tests de filtrage par statut et par personne dans `TaskCacheTests.swift` : valeurs terminées configurées, tâches non assignées selon le réglage (US3.1 à US3.3, FR-010, FR-011)
+- [ ] T062 [P] [US3] Écrire le test de recherche dans `TaskCacheTests.swift` : insensible à la casse et aux accents, aucune requête réseau émise (US3.4, FR-013)
+- [ ] T063 [P] [US3] Écrire le test des tâches récentes dans `TaskCacheTests.swift` : en tête hors filtre courant, masquées si terminées (US3.5, FR-014)
 
 ### Implementation for User Story 3
 
-- [ ] T061 [US3] Implémenter `TaskCache` — interrogation paginée de la source, filtres côté API, mise en cache — dans `Packages/NotitimeCore/Sources/NotitimeCore/Notion/TaskCache.swift` (FR-009)
-- [ ] T062 [US3] Implémenter le calcul de `searchKey` (minuscules, sans diacritiques) et la recherche locale dans `TaskCache.swift` (FR-013)
-- [ ] T063 [US3] Implémenter les tâches récentes (`RecentTaskUse`, 5 par défaut, masquage des terminées) dans `TaskCache.swift` (FR-014)
-- [ ] T064 [US3] Implémenter le rafraîchissement périodique configurable et le rafraîchissement manuel, suspendus au repos, dans `TaskCache.swift` (FR-009, SC-006)
-- [ ] T065 [US3] Implémenter la liste de tâches du menu avec projet affiché et section « Récentes » dans `App/MenuBar/TaskList.swift` (FR-012, FR-014)
-- [ ] T066 [US3] Implémenter les états du menu — indicateur de premier chargement, liste vide qualifiée avec son action, Notion injoignable avec heure de dernière synchronisation réussie — dans `App/MenuBar/TaskListStates.swift` (FR-015a, US3.7 à US3.11)
+- [ ] T064 [US3] Implémenter `TaskCache` — interrogation paginée de la source, filtres côté API, mise en cache — dans `Packages/NotitimeCore/Sources/NotitimeCore/Notion/TaskCache.swift` (FR-009)
+- [ ] T065 [US3] Implémenter le calcul de `searchKey` (minuscules, sans diacritiques) et la recherche locale dans `TaskCache.swift` (FR-013)
+- [ ] T066 [US3] Implémenter les tâches récentes (`RecentTaskUse`, 5 par défaut, masquage des terminées) dans `TaskCache.swift` (FR-014)
+- [ ] T067 [US3] Implémenter le rafraîchissement périodique configurable et le rafraîchissement manuel, suspendus au repos, dans `TaskCache.swift` (FR-009, SC-006)
+- [ ] T068 [US3] Implémenter la liste de tâches du menu avec projet affiché et section « Récentes » dans `App/MenuBar/TaskList.swift` (FR-012, FR-014)
+- [ ] T069 [US3] Implémenter les états du menu — indicateur de premier chargement, liste vide qualifiée avec son action, Notion injoignable avec heure de dernière synchronisation réussie — dans `App/MenuBar/TaskListStates.swift` (FR-015a, US3.7 à US3.11)
 
 **Checkpoint**: la sélection de tâche est confortable ; US2 reste fonctionnelle.
 
@@ -164,13 +167,13 @@ Trois racines de code, conformément à la décision de structure de `plan.md` :
 
 ### Tests for User Story 4 ⚠️
 
-- [ ] T067 [P] [US4] Écrire les tests du mode Tracker dans `Packages/NotitimeCore/Tests/NotitimeCoreTests/TrackerMachineTests.swift` : pauses exclues de la durée, arrêt produisant une entrée « Complété » de type Tracker, règle des 60 s (US4.2, US4.3, US4.5, FR-021)
+- [ ] T070 [P] [US4] Écrire les tests du mode Tracker dans `Packages/NotitimeCore/Tests/NotitimeCoreTests/TrackerMachineTests.swift` : pauses exclues de la durée, arrêt produisant une entrée « Complété » de type Tracker, règle des 60 s (US4.2, US4.3, US4.5, FR-021)
 
 ### Implementation for User Story 4
 
-- [ ] T068 [US4] Implémenter le mode Tracker dans `SessionMachine.swift` : démarrage, pause, reprise, arrêt, accumulation de `pauseIntervals` (FR-021)
-- [ ] T069 [US4] Implémenter le calcul de durée effective hors pauses dans `EntryComposer.swift` (FR-021, FR-026)
-- [ ] T070 [US4] Implémenter l'affichage du chronomètre et de l'indicateur de pause dans la barre de menus, et les commandes « Pause » et « Arrêter » du menu, dans `App/MenuBar/` (US4.1, FR-025)
+- [ ] T071 [US4] Implémenter le mode Tracker dans `SessionMachine.swift` : démarrage, pause, reprise, arrêt, accumulation de `pauseIntervals` (FR-021)
+- [ ] T072 [US4] Implémenter le calcul de durée effective hors pauses dans `EntryComposer.swift` (FR-021, FR-026)
+- [ ] T073 [US4] Implémenter l'affichage du chronomètre et de l'indicateur de pause dans la barre de menus, et les commandes « Pause » et « Arrêter » du menu, dans `App/MenuBar/` (US4.1, FR-025)
 
 **Checkpoint**: les deux modes fonctionnent, indépendamment l'un de l'autre.
 
@@ -184,20 +187,22 @@ Trois racines de code, conformément à la décision de structure de `plan.md` :
 
 ### Tests for User Story 5 ⚠️
 
-- [ ] T071 [P] [US5] Écrire les tests d'écourtement dans `Packages/NotitimeCore/Tests/NotitimeCoreTests/InterruptionTests.swift` : arrêt utilisateur ⇒ « Écourté » + commentaire « arrêt par l'utilisateur » + série remise à zéro (US5.1)
-- [ ] T072 [P] [US5] Écrire les tests de veille dans `InterruptionTests.swift` : pomodoro clôturé daté de l'instant de la veille avec commentaire « mise en veille » ; tracker mis en pause sans clôture (US5.3, US4.4)
-- [ ] T073 [P] [US5] Écrire les tests d'inactivité dans `InterruptionTests.swift` : retranchement réduisant la durée sans changer « Complété » ni la série ; activée par défaut en Tracker, désactivée en Pomodoro (US5.4, US5.5, FR-020, FR-024)
-- [ ] T074 [P] [US5] Écrire les tests de restauration dans `InterruptionTests.swift` : pomodoro retrouvé clôturé « Écourté » au dernier `lastHeartbeatAt` avec commentaire « arrêt inopiné » ; tracker retrouvé en pause (US5.6)
+- [ ] T074 [P] [US5] Écrire les tests d'écourtement dans `Packages/NotitimeCore/Tests/NotitimeCoreTests/InterruptionTests.swift` : arrêt utilisateur ⇒ « Écourté » + commentaire « arrêt par l'utilisateur » + série remise à zéro (US5.1)
+- [ ] T075 [P] [US5] Écrire les tests de veille dans `InterruptionTests.swift` : pomodoro clôturé daté de l'instant de la veille avec commentaire « mise en veille » ; tracker mis en pause sans clôture (US5.3, US4.4)
+- [ ] T076 [P] [US5] Écrire les tests d'inactivité dans `InterruptionTests.swift` : retranchement réduisant la durée sans changer « Complété » ni la série ; activée par défaut en Tracker, désactivée en Pomodoro (US5.4, US5.5, FR-020, FR-024)
+- [ ] T077 [P] [US5] Écrire les tests de restauration dans `InterruptionTests.swift` : pomodoro retrouvé clôturé « Écourté » au dernier `lastHeartbeatAt` avec commentaire « arrêt inopiné » ; tracker retrouvé en pause (US5.6)
+
+- [ ] T078 [P] [US5] Écrire l'assertion de seuil SC-005 dans `Packages/NotitimeCore/Tests/NotitimeCoreTests/DurationAccuracyTests.swift` : sur les deux modes, l'écart entre durée enregistrée et durée réelle simulée reste sous 2 secondes, pauses et inactivité retranchée comprises
 
 ### Implementation for User Story 5
 
-- [ ] T075 [US5] Implémenter `App/System/WorkspaceSleepObserver.swift` (`NSWorkspace` willSleep / didWake) et son câblage vers les événements `.systemWillSleep` / `.systemDidWake` (R-04)
-- [ ] T076 [US5] Implémenter le traitement de la veille dans `SessionMachine.swift` : clôture datée pour un pomodoro, pause pour un tracker, persistance avant endormissement (US5.3, FR-021)
-- [ ] T077 [US5] Implémenter `App/System/EventInactivityMonitor.swift` (`CGEventSource.secondsSinceLastEventType`, sondage à 15 s pendant une session seulement) et lever le point À VÉRIFIER de R-03
-- [ ] T078 [US5] Implémenter l'accumulation des `idleIntervals` et leur arbitrage avant envoi dans `SessionMachine.swift` (FR-024)
-- [ ] T079 [US5] Implémenter la restauration au démarrage selon le mode dans `SessionMachine.swift` (US5.6, FR-022)
-- [ ] T080 [US5] Implémenter l'invite « conserver ou retrancher » et l'information au réveil dans `App/MenuBar/` (US5.3, US5.4)
-- [ ] T081 [US5] Implémenter la confirmation de sortie pendant une session dans `App/NotitimeApp.swift`, appliquant la règle du mode (cas limite « quitter l'app volontairement »)
+- [ ] T079 [US5] Implémenter `App/System/WorkspaceSleepObserver.swift` (`NSWorkspace` willSleep / didWake) et son câblage vers les événements `.systemWillSleep` / `.systemDidWake` (R-04)
+- [ ] T080 [US5] Implémenter le traitement de la veille dans `SessionMachine.swift` : clôture datée pour un pomodoro, pause pour un tracker, persistance avant endormissement (US5.3, FR-021)
+- [ ] T081 [US5] Implémenter `App/System/EventInactivityMonitor.swift` (`CGEventSource.secondsSinceLastEventType`, sondage à 15 s pendant une session seulement) et lever le point À VÉRIFIER de R-03
+- [ ] T082 [US5] Implémenter l'accumulation des `idleIntervals` et leur arbitrage avant envoi dans `SessionMachine.swift` (FR-024)
+- [ ] T083 [US5] Implémenter la restauration au démarrage selon le mode dans `SessionMachine.swift` (US5.6, FR-022)
+- [ ] T084 [US5] Implémenter l'invite « conserver ou retrancher » et l'information au réveil dans `App/MenuBar/` (US5.3, US5.4)
+- [ ] T085 [US5] Implémenter la confirmation de sortie pendant une session dans `App/NotitimeApp.swift`, appliquant la règle du mode (cas limite « quitter l'app volontairement »)
 
 **Checkpoint**: l'historique Notion reste fidèle dans tous les scénarios dégradés locaux.
 
@@ -211,19 +216,22 @@ Trois racines de code, conformément à la décision de structure de `plan.md` :
 
 ### Tests for User Story 6 ⚠️
 
-- [ ] T082 [P] [US6] Écrire les tests d'idempotence dans `Packages/NotitimeCore/Tests/NotitimeCoreTests/OutboxRetryTests.swift` : issue indéterminée ⇒ vérification par `localID` avant réessai ; erreur explicite ⇒ aucune vérification, en comptant les requêtes émises (FR-028, R-06, US6.4)
-- [ ] T083 [P] [US6] Écrire le test d'écriture de `attemptOutcome` **avant** l'envoi dans `OutboxRetryTests.swift` : un arrêt simulé pendant la requête laisse `indéterminée` en base (R-06)
-- [ ] T084 [P] [US6] Écrire les tests de classement des erreurs dans `OutboxRetryTests.swift` : `429` avec `Retry-After`, `5xx` et réseau ⇒ réessais indéfinis ; `400`, `403`, `404` ⇒ échec définitif immédiat (FR-029, FR-030, US6.3)
-- [ ] T085 [P] [US6] Écrire le test d'ordre chronologique de vidage de la file dans `OutboxRetryTests.swift` (US6.2)
+- [ ] T086 [P] [US6] Écrire les tests d'idempotence dans `Packages/NotitimeCore/Tests/NotitimeCoreTests/OutboxRetryTests.swift` : issue indéterminée ⇒ vérification par `localID` avant réessai ; erreur explicite ⇒ aucune vérification, en comptant les requêtes émises (FR-028, R-06, US6.4)
+- [ ] T087 [P] [US6] Écrire le test d'écriture de `attemptOutcome` **avant** l'envoi dans `OutboxRetryTests.swift` : un arrêt simulé pendant la requête laisse `indéterminée` en base (R-06)
+- [ ] T088 [P] [US6] Écrire les tests de classement des erreurs dans `OutboxRetryTests.swift` : `429` avec `Retry-After`, `5xx` et réseau ⇒ réessais indéfinis ; `400`, `403`, `404` ⇒ échec définitif immédiat (FR-029, FR-030, US6.3)
+- [ ] T089 [P] [US6] Écrire le test d'ordre chronologique de vidage de la file dans `OutboxRetryTests.swift` (US6.2)
+
+- [ ] T090 [P] [US6] Écrire la campagne automatisée SC-004 dans `Packages/NotitimeCore/Tests/NotitimeCoreTests/OutboxSoakTests.swift` : 100 sessions enchaînées sous coupures réseau, `429` et arrêts simulés en cours de requête, avec assertions explicites de zéro entrée perdue et zéro entrée dupliquée
+- [ ] T091 [P] [US6] Écrire le test de double interrogation d'idempotence dans `OutboxRetryTests.swift` : une entrée archivée est détectée par la seconde requête (`is_archived: true`) et n'est pas recréée ; le test consigne la limite bornée de la corbeille documentée en R-06
 
 ### Implementation for User Story 6
 
-- [ ] T086 [US6] Implémenter le suivi de `attemptOutcome` (écrit avant l'envoi, corrigé à réception) dans `Outbox.swift` (R-06)
-- [ ] T087 [US6] Implémenter la vérification d'idempotence conditionnelle par interrogation sur `localID` dans `Outbox.swift` (FR-028)
-- [ ] T088 [US6] Implémenter le backoff plafonné, le respect de `Retry-After` et la reprise automatique au retour du réseau dans `Outbox.swift` (FR-029, US6.2)
-- [ ] T089 [US6] Implémenter le marquage d'échec définitif et la conservation locale consultable dans `Outbox.swift` (FR-030, US6.5)
-- [ ] T090 [US6] Implémenter l'indicateur « N entrées en attente » et le détail d'un échec définitif avec son action de résolution dans `App/MenuBar/` (FR-030)
-- [ ] T091 [US6] Implémenter la réassignation d'une entrée en échec à une autre tâche avant renvoi dans `App/MenuBar/` et `Outbox.swift` (FR-031, cas limite tâche supprimée)
+- [ ] T092 [US6] Implémenter le suivi de `attemptOutcome` (écrit avant l'envoi, corrigé à réception) dans `Outbox.swift` (R-06)
+- [ ] T093 [US6] Implémenter la vérification d'idempotence conditionnelle par double interrogation sur `localID` — sans `is_archived` puis avec `is_archived: true` — dans `Outbox.swift` (FR-028, R-06)
+- [ ] T094 [US6] Implémenter le backoff plafonné, le respect de `Retry-After` et la reprise automatique au retour du réseau dans `Outbox.swift` (FR-029, US6.2)
+- [ ] T095 [US6] Implémenter le marquage d'échec définitif et la conservation locale consultable dans `Outbox.swift` (FR-030, US6.5)
+- [ ] T096 [US6] Implémenter l'indicateur « N entrées en attente » et le détail d'un échec définitif avec son action de résolution dans `App/MenuBar/` (FR-030)
+- [ ] T097 [US6] Implémenter la réassignation d'une entrée en échec à une autre tâche avant renvoi dans `App/MenuBar/` et `Outbox.swift` (FR-031, cas limite tâche supprimée)
 
 **Checkpoint**: SC-004 vérifiable — 100 sessions en conditions dégradées, aucune perte, aucun doublon.
 
@@ -237,18 +245,18 @@ Trois racines de code, conformément à la décision de structure de `plan.md` :
 
 ### Tests for User Story 7 ⚠️
 
-- [ ] T092 [P] [US7] Écrire les tests des réglages dans `Packages/NotitimeCore/Tests/NotitimeCoreTests/SettingsTests.swift` : valeurs par défaut de US7.1, persistance d'un préréglage personnalisé, effet du changement de valeurs terminées sur le filtre (US7.2, US7.5)
+- [ ] T098 [P] [US7] Écrire les tests des réglages dans `Packages/NotitimeCore/Tests/NotitimeCoreTests/SettingsTests.swift` : valeurs par défaut de US7.1, persistance d'un préréglage personnalisé, effet du changement de valeurs terminées sur le filtre (US7.2, US7.5)
 
 ### Implementation for User Story 7
 
-- [ ] T093 [US7] Implémenter le panneau de réglages dans `App/Settings/SettingsView.swift` : durées, préréglages 25/5/15 et 50/10/20, valeurs personnalisées, nombre avant pause longue (FR-018, US7.1, US7.2)
-- [ ] T094 [P] [US7] Implémenter les réglages d'inactivité par mode (activée en Tracker, désactivée en Pomodoro par défaut) dans `App/Settings/` (FR-024)
-- [ ] T095 [P] [US7] Implémenter les réglages de notification, de son et d'intervalle de rafraîchissement dans `App/Settings/` (FR-032, FR-009)
-- [ ] T096 [P] [US7] Implémenter le lancement à l'ouverture de session via `SMAppService.mainApp`, l'état lu depuis `status` et non depuis une préférence locale, dans `App/System/LoginItemService.swift` (FR-033, R-11)
-- [ ] T097 [P] [US7] Implémenter le mode Concentration optionnel via un raccourci Shortcuts désigné par l'utilisateur dans `App/System/FocusModeService.swift`, l'échec n'empêchant jamais le démarrage d'une session, et lever le point À VÉRIFIER de R-12 (FR-034)
-- [ ] T098 [US7] Implémenter l'écran de mapping des propriétés et de changement de base et de source, avec revalidation du schéma, dans `App/Settings/BindingsView.swift` (FR-007, US1.6)
-- [ ] T099 [US7] Implémenter la re-résolution d'une source disparue (une seule ⇒ proposée, plusieurs ⇒ choix redemandé, aucune ⇒ configuration invalide) dans `App/Settings/BindingsView.swift` (FR-006a)
-- [ ] T100 [P] [US7] Implémenter l'export du journal depuis les réglages dans `App/Settings/` (FR-037)
+- [ ] T099 [US7] Implémenter le panneau de réglages dans `App/Settings/SettingsView.swift` : durées, préréglages 25/5/15 et 50/10/20, valeurs personnalisées, nombre avant pause longue (FR-018, US7.1, US7.2)
+- [ ] T100 [P] [US7] Implémenter les réglages d'inactivité par mode (activée en Tracker, désactivée en Pomodoro par défaut) dans `App/Settings/` (FR-024)
+- [ ] T101 [P] [US7] Implémenter les réglages de notification, de son et d'intervalle de rafraîchissement dans `App/Settings/` (FR-032, FR-009)
+- [ ] T102 [P] [US7] Implémenter le lancement à l'ouverture de session via `SMAppService.mainApp`, l'état lu depuis `status` et non depuis une préférence locale, dans `App/System/LoginItemService.swift` (FR-033, R-11)
+- [ ] T103 [P] [US7] Implémenter le mode Concentration optionnel via un raccourci Shortcuts désigné par l'utilisateur dans `App/System/FocusModeService.swift`, l'échec n'empêchant jamais le démarrage d'une session, et lever le point À VÉRIFIER de R-12 (FR-034)
+- [ ] T104 [US7] Implémenter l'écran de mapping des propriétés et de changement de base et de source, avec revalidation du schéma, dans `App/Settings/BindingsView.swift` (FR-007, US1.6)
+- [ ] T105 [US7] Implémenter la re-résolution d'une source disparue (une seule ⇒ proposée, plusieurs ⇒ choix redemandé, aucune ⇒ configuration invalide) dans `App/Settings/BindingsView.swift` (FR-006a)
+- [ ] T106 [P] [US7] Implémenter l'export du journal depuis les réglages dans `App/Settings/` (FR-037)
 
 **Checkpoint**: toutes les user stories sont indépendamment fonctionnelles.
 
@@ -256,14 +264,14 @@ Trois racines de code, conformément à la décision de structure de `plan.md` :
 
 ## Phase 10: Polish & Cross-Cutting Concerns
 
-- [ ] T101 [P] Externaliser toutes les chaînes dans `App/Resources/Localizable.xcstrings` et vérifier qu'aucune chaîne visible n'est codée en dur (FR-036)
-- [ ] T102 [P] Implémenter le repli sans propriété Personne quand Notion la refuse pour un invité, avec information unique à l'utilisateur, dans `Packages/NotitimeCore/Sources/NotitimeCore/Outbox/EntryComposer.swift` (cas limite invité)
-- [ ] T103 [P] Implémenter le remplacement de connexion après confirmation, file de l'ancien workspace vidée ou envoyée avant, dans `Packages/NotitimeCore/Sources/NotitimeCore/Notion/ConnectionService.swift` (cas limite multi-workspace)
-- [ ] T104 Éliminer tous les warnings Swift produits par `scripts/build.sh` (exigence du workflow de la constitution)
-- [ ] T105 Vérifier que `scripts/test.sh` passe intégralement en mode avion — aucun test ne doit dépendre du réseau (principe VII)
-- [ ] T106 Exécuter les huit validations manuelles de `quickstart.md` et consigner les écarts
-- [ ] T107 [P] Produire le bundle universel non signé par `scripts/package.sh` et rédiger le guide d'installation (autorisation manuelle dans les réglages de sécurité macOS)
-- [ ] T108 [P] Créer `CHANGELOG.md` et y consigner les comportements visibles par l'utilisateur (exigence du workflow de la constitution)
+- [ ] T107 [P] Externaliser toutes les chaînes dans `App/Resources/Localizable.xcstrings` et vérifier qu'aucune chaîne visible n'est codée en dur (FR-036)
+- [ ] T108 [P] Implémenter le repli sans propriété Personne quand Notion la refuse pour un invité, avec information unique à l'utilisateur, dans `Packages/NotitimeCore/Sources/NotitimeCore/Outbox/EntryComposer.swift` (cas limite invité)
+- [ ] T109 [P] Implémenter le remplacement de connexion après confirmation, file de l'ancien workspace vidée ou envoyée avant, dans `Packages/NotitimeCore/Sources/NotitimeCore/Notion/ConnectionService.swift` (cas limite multi-workspace)
+- [ ] T110 Éliminer tous les warnings Swift produits par `scripts/build.sh` (exigence du workflow de la constitution)
+- [ ] T111 Vérifier que `scripts/test.sh` passe intégralement en mode avion — aucun test ne doit dépendre du réseau (principe VII)
+- [ ] T112 Exécuter les huit validations manuelles de `quickstart.md` et consigner les écarts
+- [ ] T113 [P] Produire le bundle universel non signé par `scripts/package.sh` et rédiger le guide d'installation (autorisation manuelle dans les réglages de sécurité macOS)
+- [ ] T114 [P] Créer `CHANGELOG.md` et y consigner les comportements visibles par l'utilisateur (exigence du workflow de la constitution)
 
 ---
 
@@ -276,8 +284,8 @@ Trois racines de code, conformément à la décision de structure de `plan.md` :
 - **US1 (Phase 3)** : dépend de Foundational. Aucune dépendance sur une autre story.
 - **US2 (Phase 4)** : dépend de Foundational. Dépend fonctionnellement d'US1 pour être exerçable de bout en bout (il faut une connexion valide), mais sa logique est testable seule avec des fixtures.
 - **US3, US4, US5 (Phases 5 à 7)** : dépendent de Foundational. Parallélisables entre elles.
-- **US6 (Phase 8)** : dépend de Foundational et de l'`Outbox` minimal posé en US2 (T052).
-- **US7 (Phase 9)** : dépend de Foundational ; T098 et T099 s'appuient sur le validateur d'US1.
+- **US6 (Phase 8)** : dépend de Foundational et de l'`Outbox` minimal posé en US2 (T053).
+- **US7 (Phase 9)** : dépend de Foundational ; T104 et T105 s'appuient sur le validateur d'US1.
 - **Polish (Phase 10)** : dépend des stories retenues.
 
 ### Ordre de livraison recommandé
@@ -339,4 +347,4 @@ US3 (confort de sélection) → US4 (second mode) → US5 (fidélité des donné
 - `[P]` = fichiers distincts, aucune dépendance.
 - Commits conventionnels, un commit par tâche ou par groupe logique cohérent.
 - Aucun merge sur un test cassé (principe VII).
-- Deux points À VÉRIFIER de `research.md` sont levés par des tâches nommées : R-03 par T077, R-12 par T097. Les deux autres (budget `willSleepNotification` en R-04, concurrence SwiftData en R-08) se lèvent respectivement à T076 et T017.
+- Deux points À VÉRIFIER de `research.md` sont levés par des tâches nommées : R-03 par T081, R-12 par T103. Les deux autres (budget `willSleepNotification` en R-04, concurrence SwiftData en R-08) se lèvent respectivement à T080 et T017.

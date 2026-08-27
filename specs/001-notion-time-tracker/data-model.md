@@ -112,7 +112,7 @@ La file d'envoi durable (FR-027). Une entrée y est créée **avant** toute tent
 | `attemptOutcome` | `.neverAttempted` / `.explicitError` / `.indeterminate` | Décide de la vérification d'idempotence au réessai (R-06) |
 | `attemptCount` | `Int` | |
 | `nextAttemptAt` | `Date?` | Backoff plafonné |
-| `createdPageID` | `String?` | Renseigné à la création ; permet la publication du commentaire |
+| `createdPageID` | `String?` | Renseigné à la création ; permet la publication du commentaire. Non disponible dans le cas d'issue indéterminée, ce qui borne la détection d'une page mise en corbeille (R-06) |
 | `commentPosted` | `Bool` | Best-effort, n'empêche jamais le retrait de la file (FR-026a) |
 
 ### `AppSettings`
@@ -130,10 +130,11 @@ Reproduit dans `docs/notion-schema.md`, qui fait foi pour la validation (FR-006)
 | Clé logique | Type Notion | Requis | Usage |
 |---|---|---|---|
 | `title` | `title` | oui | FR-012, FR-013 |
-| — | — | — | Les tâches à `in_trash` vrai sont exclues (champ renommé depuis `archived` en `2026-03-11`) |
 | `status` | `status` ou `select` | oui | FR-010 |
 | `assignee` | `people` | non | FR-011 |
 | `project` | `relation` → Projets | non | FR-012 |
+
+Les pages en corbeille ne sont pas retournées par l'interrogation d'une source, et le paramètre `is_archived` (défaut faux) écarte en plus les pages archivées : le cache ne contient donc que des tâches vivantes, sans filtrage supplémentaire côté application.
 
 ### Base Time Entries — écrite
 
