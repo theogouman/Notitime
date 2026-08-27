@@ -12,6 +12,22 @@ public struct ComposedEntry: Sendable, Equatable {
     public let outcome: SessionOutcome
     public let shortenReason: ShortenReason?
     public let subtractedIdleMinutes: Int
+
+    public init(localID: UUID, taskPageID: String, title: String, startedAt: Date,
+                endedAt: Date, durationMinutes: Int, mode: SessionMode,
+                outcome: SessionOutcome, shortenReason: ShortenReason?,
+                subtractedIdleMinutes: Int) {
+        self.localID = localID
+        self.taskPageID = taskPageID
+        self.title = title
+        self.startedAt = startedAt
+        self.endedAt = endedAt
+        self.durationMinutes = durationMinutes
+        self.mode = mode
+        self.outcome = outcome
+        self.shortenReason = shortenReason
+        self.subtractedIdleMinutes = subtractedIdleMinutes
+    }
 }
 
 /// Compose une entrée de temps à partir d'une session close (FR-026).
@@ -23,7 +39,7 @@ public struct EntryComposer: Sendable {
     public static let maximumTitleLength = 200
 
     private let mapper: PropertyMapper
-    private let dataSourceID: String
+    public let dataSourceID: String
     private let personUserID: String
     /// Options réellement présentes sur la propriété de statut de la source.
     private let statusOptions: [String]
@@ -101,7 +117,13 @@ public struct EntryComposer: Sendable {
         put(mapper.numberValue(.entryDuration, entry.durationMinutes))
         put(mapper.selectOrStatusValue(.entryType, methodName(for: entry.mode)))
         put(mapper.selectOrStatusValue(.entryStatus, statusName(for: entry.outcome)))
-        put(mapper.peopleValue(.entryPerson, [personUserID]))
+        // Cas limite « invité » : un compte invité n'apparaît pas dans la
+        // propriété Personne de la base, et Notion refuse alors l'écriture. On
+        // omet la propriété plutôt que d'échouer : mieux vaut une entrée sans
+        // responsable qu'aucune entrée (T108).
+        if !personUserID.isEmpty {
+            put(mapper.peopleValue(.entryPerson, [personUserID]))
+        }
         put(mapper.richTextValue(.entryLocalID, entry.localID.uuidString))
 
         return ["parent": ["data_source_id": dataSourceID], "properties": properties]
@@ -139,6 +161,21 @@ public struct EntryComposer: Sendable {
         // l'échec sera explicite, qu'une option prise au hasard qui rendrait
         // l'entrée fausse sans que personne ne s'en aperçoive.
         return canonical
+    }
+
+    /// Filtre de vérification d'idempotence : l'identifiant local, porté par la
+    /// propriété `rich_text` dédiée (FR-028).
+    public func idempotencyQuery(for entry: ComposedEntry,
+                                 includeArchived: Bool) -> [String: Any] {
+        let name = mapper.name(.entryLocalID) ?? NotionAPI.defaultLocalIDPropertyName
+        var body: [String: Any] = [
+            "page_size": 1,
+            "filter": ["property": name,
+                       "rich_text": ["equals": entry.localID.uuidString]]
+        ]
+        // Notion exclut les pages en corbeille par défaut ; il faut le demander.
+        if includeArchived { body["in_trash"] = true }
+        return body
     }
 
     // MARK: - Commentaire (FR-026a)

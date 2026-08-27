@@ -91,6 +91,17 @@ public actor ConnectionService: AuthorizationProvider {
         // réessaieront. Elle ne doit surtout pas déconnecter l'utilisateur.
     }
 
+    /// T109 — cas limite multi-workspace : une nouvelle autorisation sur un
+    /// **autre** workspace remplace la connexion.
+    ///
+    /// L'appelant doit avoir vidé ou envoyé la file de l'ancien workspace au
+    /// préalable : les entrées y référencent des pages qui n'existent pas dans
+    /// le nouveau, et les envoyer ensuite échouerait en `404`.
+    public func isDifferentWorkspace(_ candidate: NotionAuthorization) -> Bool {
+        guard let current = authorization else { return false }
+        return current.workspaceID != candidate.workspaceID
+    }
+
     // MARK: - Déconnexion
 
     /// Déconnexion volontaire. L'appelant a la responsabilité d'avertir si des

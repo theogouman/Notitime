@@ -392,3 +392,53 @@ public final class AppSettings {
         self.doneStatusValues = doneStatusValues
     }
 }
+
+/// Préréglages Pomodoro de FR-018.
+public enum PomodoroPreset: String, CaseIterable, Sendable {
+    case classic, extended
+
+    public var label: String {
+        switch self {
+        case .classic: return "25 / 5 / 15"
+        case .extended: return "50 / 10 / 20"
+        }
+    }
+
+    public var pomodoroMinutes: Int { self == .classic ? 25 : 50 }
+    public var shortBreakMinutes: Int { self == .classic ? 5 : 10 }
+    public var longBreakMinutes: Int { self == .classic ? 15 : 20 }
+}
+
+public extension AppSettings {
+    /// Traduction vers les réglages de la machine à états.
+    ///
+    /// Les valeurs sont bornées ici plutôt qu'à la saisie : le magasin peut
+    /// contenir n'importe quoi après une migration ou une édition manuelle, et
+    /// un pomodoro de zéro minute se terminerait avant d'avoir commencé.
+    var sessionSettings: SessionSettings {
+        var settings = SessionSettings()
+        settings.pomodoroSeconds = max(1, pomodoroMinutes) * 60
+        settings.shortBreakSeconds = max(1, shortBreakMinutes) * 60
+        settings.longBreakSeconds = max(1, longBreakMinutes) * 60
+        settings.pomodorosBeforeLongBreak = max(1, pomodorosBeforeLongBreak)
+        settings.idleThresholdSeconds = max(1, idleThresholdMinutes) * 60
+        settings.idleDetectionInTracker = idleDetectionEnabledTracker
+        settings.idleDetectionInPomodoro = idleDetectionEnabledPomodoro
+        return settings
+    }
+
+    /// Traduction vers les filtres du cache de tâches.
+    func taskFilterSettings(currentUserID: String?) -> TaskFilterSettings {
+        var settings = TaskFilterSettings()
+        settings.doneStatusValues = doneStatusValues
+        settings.currentUserID = currentUserID
+        settings.includeUnassigned = showUnassignedTasks
+        return settings
+    }
+
+    func apply(_ preset: PomodoroPreset) {
+        pomodoroMinutes = preset.pomodoroMinutes
+        shortBreakMinutes = preset.shortBreakMinutes
+        longBreakMinutes = preset.longBreakMinutes
+    }
+}

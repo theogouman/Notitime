@@ -14,12 +14,27 @@ final class SessionController: ObservableObject {
     /// Pause proposée, en attente de décision. Distincte d'une pause en cours :
     /// tant qu'elle n'est pas acceptée, la machine ne tient aucune session.
     private var suggestedBreak: BreakKind?
-    @Published private(set) var tasks: [FetchedTask] = []
+    @Published private(set) var tasks: [CachedTaskItem] = []
+    /// Identifiants des tâches récentes, affichées en tête (FR-014).
+    @Published private(set) var recentIDs: Set<String> = []
+    @Published private(set) var lastSync: Date?
     @Published private(set) var isLoadingTasks = false
     /// Message court affiché sous le menu : issue du dernier envoi, refus, etc.
     @Published private(set) var notice: String?
     @Published private(set) var pendingCount = 0
     @Published var selectedTaskID: String?
+    /// Session close en attente d'arbitrage d'inactivité (FR-024).
+    @Published private(set) var idleArbitration: CompletedSession?
+    @Published private(set) var searchText: String = ""
+    /// Entrées en échec définitif, consultables et réassignables (FR-030, FR-031).
+    @Published private(set) var failedEntries: [OutboxEntry] = []
+    /// Vrai pendant une session : `NotitimeApp` refuse alors de quitter sans
+    /// confirmation (cas limite « quitter l'app volontairement »).
+    var hasRunningSession: Bool { phase.offersStop }
+    @Published private(set) var isTracker = false
+    @Published private(set) var isPaused = false
+    /// Temps écoulé, pour le suivi libre qui n'a pas de compte à rebours.
+    @Published private(set) var elapsedLabel = "00:00"
 
     private let environment: AppEnvironment
     private let machine: SessionMachine
@@ -28,6 +43,11 @@ final class SessionController: ObservableObject {
     private var tickerGeneration = 0
     private var settings = SessionSettings()
     private let notifications: NotificationPresenter
+    private var sleepObserver: WorkspaceSleepObserver?
+    private var idleMonitor: EventInactivityMonitor?
+    private var cache: TaskCache?
+    private var drainTask: Task<Void, Never>?
+    private var refreshTask: Task<Void, Never>?
 
     init(environment: AppEnvironment) {
         self.environment = environment
@@ -42,6 +62,46 @@ final class SessionController: ObservableObject {
 
     // MARK: - Tâches
 
+    /// Relit les réglages persistés et les propage. Appelé au démarrage et à
+    /// chaque modification : un réglage qui n'aurait d'effet qu'au prochain
+    /// lancement passerait pour inopérant.
+    func applySettings() async {
+        let context = environment.container.mainContext
+        let stored = (try? context.fetch(FetchDescriptor<AppSettings>()).first)
+            ?? {
+                let created = AppSettings()
+                context.insert(created)
+                try? context.save()
+                return created
+            }()
+
+        settings = stored.sessionSettings
+        notifications.soundEnabled = stored.soundEnabled
+        await machine.update(settings: settings)
+        let userID = (try? context.fetch(FetchDescriptor<NotionConnection>()).first)?.ownerUserID
+        await cache?.update(settings: stored.taskFilterSettings(currentUserID: userID))
+        scheduleRefresh(everyMinutes: stored.taskRefreshIntervalMinutes)
+    }
+
+    /// FR-009, SC-006 — rafraîchissement périodique, **suspendu au repos** :
+    /// une application de barre de menus ne doit rien émettre quand elle ne
+    /// sert pas.
+    private func scheduleRefresh(everyMinutes minutes: Int) {
+        refreshTask?.cancel()
+        refreshTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(max(1, minutes) * 60))
+                guard let self, !Task.isCancelled else { return }
+                // Au repos et sans session : on saute le tour.
+                guard self.menuIsOpen || self.phase.offersStop else { continue }
+                await self.loadTasks()
+            }
+        }
+    }
+
+    /// Le menu ouvert est le signal qu'une interaction est en cours.
+    var menuIsOpen = false
+
     /// FR-015 — sans tâche, aucune session. Le menu doit donc pouvoir en offrir.
     func loadTasks() async {
         guard let binding = binding(for: .tasks) else {
@@ -52,17 +112,69 @@ final class SessionController: ObservableObject {
         defer { isLoadingTasks = false }
 
         do {
-            let fetch = TaskFetch(client: environment.notion,
-                                  mapper: PropertyMapper(map: binding.propertyRefs),
-                                  log: environment.log)
-            tasks = try await fetch.load(from: binding.dataSourceID)
-            notice = tasks.isEmpty ? "Aucune tâche dans la base liée." : nil
+            let userID = (try? environment.container.mainContext
+                .fetch(FetchDescriptor<NotionConnection>()).first)?.ownerUserID
+            let stored = try? environment.container.mainContext
+                .fetch(FetchDescriptor<AppSettings>()).first
+            let filters = (stored ?? AppSettings()).taskFilterSettings(currentUserID: userID)
+
+            let cache = self.cache ?? TaskCache(client: environment.notion,
+                                                mapper: PropertyMapper(map: binding.propertyRefs),
+                                                dataSourceID: binding.dataSourceID,
+                                                settings: filters,
+                                                log: environment.log)
+            self.cache = cache
+            await cache.update(settings: filters)
+            try await cache.refresh()
+
+            let all = await cache.search(searchText)
+            let recents = await cache.recentTasks()
+            tasks = recents + all.filter { item in !recents.contains { $0.id == item.id } }
+            recentIDs = Set(recents.map(\.id))
+            lastSync = await cache.lastSuccessfulSync
+            notice = tasks.isEmpty ? emptyTaskMessage(filters) : nil
             if selectedTaskID == nil { selectedTaskID = tasks.first?.id }
         } catch {
             await environment.log.log(.error, "chargement des tâches en échec : \(error)")
-            notice = "Notion est injoignable. Les tâches affichées datent de la dernière synchronisation."
+            // FR-015a — le cache reste utilisable, et l'utilisateur sait de
+            // quand datent les tâches affichées.
+            let stamp = lastSync.map { SessionController.timeFormatter.string(from: $0) }
+            notice = stamp.map { "Notion est injoignable. Tâches synchronisées à \($0)." }
+                ?? "Notion est injoignable et aucune synchronisation n'a encore abouti."
         }
     }
+
+    /// FR-015a — une liste vide s'explique, avec l'action correspondante.
+    private func emptyTaskMessage(_ filters: TaskFilterSettings) -> String {
+        if !searchText.trimmingCharacters(in: .whitespaces).isEmpty {
+            return "Aucune tâche ne correspond à cette recherche."
+        }
+        if filters.currentUserID != nil && !filters.includeUnassigned {
+            return "Aucune tâche non terminée ne vous est assignée. "
+                 + "Activez « tâches non assignées » dans les réglages."
+        }
+        return "Aucune tâche non terminée dans la base liée."
+    }
+
+    /// Recherche locale : aucune requête réseau (FR-013).
+    func search(_ text: String) async {
+        searchText = text
+        guard let cache else { return }
+        let all = await cache.search(text)
+        let recents = await cache.recentTasks()
+        let visible = text.trimmingCharacters(in: .whitespaces).isEmpty
+            ? recents + all.filter { item in !recents.contains { $0.id == item.id } }
+            : all
+        tasks = visible
+    }
+
+    static let timeFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "fr_FR")
+        formatter.timeStyle = .short
+        formatter.dateStyle = .none
+        return formatter
+    }()
 
     // MARK: - Session
 
@@ -72,10 +184,36 @@ final class SessionController: ObservableObject {
             return
         }
         suggestedBreak = nil
+        await cache?.noteUse(of: taskID)
+        // FR-034 — le mode Concentration est un confort : son échec ne doit
+        // jamais retarder ni empêcher le démarrage du chronomètre.
+        let shortcut = (try? environment.container.mainContext
+            .fetch(FetchDescriptor<AppSettings>()).first)?.focusShortcutName
+        await FocusModeService.run(shortcutNamed: shortcut, log: environment.log)
         let target = Duration.seconds((minutes ?? settings.pomodoroSeconds / 60) * 60)
         let result = await machine.handle(.start(taskPageID: taskID, mode: .pomodoro, target: target))
         await react(to: result)
         startTicking()
+    }
+
+    /// US4.1 — suivi libre : aucune cible, l'utilisateur arrête quand il veut.
+    func startTracker() async {
+        guard let taskID = selectedTaskID, !taskID.isEmpty else {
+            notice = "Choisissez d'abord une tâche."
+            return
+        }
+        suggestedBreak = nil
+        await cache?.noteUse(of: taskID)
+        await react(to: await machine.handle(.start(taskPageID: taskID, mode: .tracker,
+                                                    target: nil)))
+        startTicking()
+        startIdleMonitoring()
+    }
+
+    /// US4.1 — pause et reprise, réservées au Tracker (FR-021).
+    func togglePause() async {
+        guard let snapshot = await machine.snapshot else { return }
+        await react(to: await machine.handle(snapshot.state == .paused ? .resume : .pause))
     }
 
     func stop() async {
@@ -101,10 +239,42 @@ final class SessionController: ObservableObject {
         startTicking()
     }
 
+    /// US5.6 — traite la session retrouvée selon son mode, puis met en place
+    /// les observateurs système.
     func restore() async {
-        await machine.restore()
+        installSystemObservers()
+
+        switch await machine.restoreSession() {
+        case .nothing:
+            break
+        case .closed(let session):
+            // Un pomodoro interrompu par un arrêt inopiné produit quand même son
+            // entrée : le temps a bien été travaillé (principe IV).
+            notice = "Session précédente retrouvée et clôturée."
+            await handleCompletion(session)
+        case .paused:
+            notice = "Suivi libre retrouvé, en pause. Reprenez ou arrêtez."
+            startTicking()
+        }
         await refreshPhase()
-        if await machine.snapshot != nil { startTicking() }
+    }
+
+    private func installSystemObservers() {
+        guard sleepObserver == nil else { return }
+        sleepObserver = WorkspaceSleepObserver(
+            onSleep: { [weak self] in await self?.react(to: await self?.machine.handle(.systemWillSleep) ?? .none) },
+            onWake: { [weak self] in await self?.react(to: await self?.machine.handle(.systemDidWake) ?? .none) }
+        )
+        sleepObserver?.start()
+    }
+
+    private func startIdleMonitoring() {
+        idleMonitor?.stop()
+        idleMonitor = EventInactivityMonitor(thresholdSeconds: settings.idleThresholdSeconds) {
+            [weak self] seconds in
+            await self?.machine.handle(.idleDetected(seconds: seconds))
+        }
+        idleMonitor?.start()
     }
 
     /// Un tick par seconde : c'est la granularité de l'affichage, et la machine
@@ -158,7 +328,7 @@ final class SessionController: ObservableObject {
             notice = "Pause terminée."
             stopTicking()
             await refreshPhase()
-            await notifications.breakFinished(isLong: false)
+            if notificationsAllowed { await notifications.breakFinished(isLong: false) }
 
         case .finished(let session, let suggestion):
             // Le minuteur s'annulait lui-même ici, puis l'envoi partait depuis
@@ -168,12 +338,12 @@ final class SessionController: ObservableObject {
             await refreshPhase()
             // FR-032 : prévenir d'abord, envoyer ensuite. L'utilisateur n'a pas
             // à attendre que Notion réponde pour savoir que son pomodoro est fini.
-            if session.outcome == .ranToTerm {
+            if session.outcome == .ranToTerm, notificationsAllowed {
                 await notifications.pomodoroFinished(
                     taskTitle: title(of: session.taskPageID),
                     minutes: EntryComposer.minutes(session.effectiveSeconds))
             }
-            await deliver(session)
+            await handleCompletion(session)
             suggestedBreak = suggestion
             await refreshPhase()
             if let suggestion {
@@ -185,7 +355,51 @@ final class SessionController: ObservableObject {
 
     /// Unique point de mise à jour de la phase : elle se **dérive** de l'état de
     /// la machine et n'est jamais posée à la main.
+    /// FR-024 — une inactivité détectée se tranche **avant** la mise en file :
+    /// on ne devine pas si l'utilisateur lisait ou s'était absenté.
+    private func handleCompletion(_ session: CompletedSession) async {
+        idleMonitor?.stop()
+        guard session.pendingIdleSeconds > 0 else {
+            await deliver(session)
+            return
+        }
+        idleArbitration = session
+        notice = "\(EntryComposer.minutes(session.pendingIdleSeconds)) min d'inactivité "
+               + "détectées. Les conserver ou les retrancher ?"
+    }
+
+    func resolveIdle(subtract: Bool) async {
+        guard let session = idleArbitration else { return }
+        idleArbitration = nil
+        let resolved = subtract ? session.subtractingIdle() : session.keepingIdle()
+        await environment.log.log(.session, "inactivité \(subtract ? "retranchée" : "conservée")"
+                                  + " durée finale=\(resolved.effectiveSeconds)s")
+        await deliver(resolved)
+    }
+
+    /// FR-032 — notifications et son sont désactivables.
+    private var notificationsAllowed: Bool {
+        let stored = try? environment.container.mainContext
+            .fetch(FetchDescriptor<AppSettings>()).first
+        return stored?.notificationsEnabled ?? true
+    }
+
     private func refreshPhase() async {
+        if let snapshot = await machine.snapshot {
+            isTracker = snapshot.mode == .tracker && !snapshot.isBreak
+            isPaused = snapshot.state == .paused
+            let paused = snapshot.pauseIntervals.reduce(0.0) { total, interval in
+                total + max(0, min(interval.end, environment.time.wallClock)
+                    .timeIntervalSince(interval.start))
+            }
+            let worked = max(0, environment.time.wallClock
+                .timeIntervalSince(snapshot.startedAt) - paused)
+            elapsedLabel = SessionControls.format(.seconds(worked))
+        } else {
+            isTracker = false
+            isPaused = false
+            elapsedLabel = "00:00"
+        }
         phase = SessionPhase.derive(snapshot: await machine.snapshot,
                                     suggestedBreak: suggestedBreak,
                                     now: environment.time.wallClock)
@@ -226,6 +440,7 @@ final class SessionController: ObservableObject {
             notice = "Entrée en attente : \(cause)"
         }
         refreshPendingCount()
+        if pendingCount > 0 { await drainOnce() }
     }
 
     private func makeComposer(_ binding: DatabaseBinding) -> EntryComposer? {
@@ -235,7 +450,7 @@ final class SessionController: ObservableObject {
             return nil
         }
         let mapper = PropertyMapper(map: binding.propertyRefs)
-        let titles = Dictionary(uniqueKeysWithValues: tasks.map { ($0.id, $0.title) })
+        let titles = Dictionary(tasks.map { ($0.id, $0.title) }, uniquingKeysWith: { first, _ in first })
 
         return EntryComposer(mapper: mapper,
                              dataSourceID: binding.dataSourceID,
@@ -244,6 +459,73 @@ final class SessionController: ObservableObject {
                              // n'accepte rien d'autre (FR-026).
                              statusOptions: mapper.reference(.entryStatus)?.options ?? [],
                              taskTitleLookup: { titles[$0] })
+    }
+
+    // MARK: - Drain de la file (US6)
+
+    /// Rejoue les entrées en attente, dans l'ordre chronologique, en respectant
+    /// l'issue de leur tentative précédente. Ne s'arrête jamais sur une erreur
+    /// transitoire : c'est la garantie du principe IV.
+    func drainOutbox() async {
+        guard drainTask == nil else { return }
+        drainTask = Task { [weak self] in
+            defer { Task { @MainActor in self?.drainTask = nil } }
+            await self?.drainOnce()
+        }
+        await drainTask?.value
+    }
+
+    private func drainOnce() async {
+        let context = environment.container.mainContext
+        let pending = SendState.pending.rawValue
+        guard let stored = try? context.fetch(
+            FetchDescriptor<OutboxEntry>(predicate: #Predicate { $0.sendStateRaw == pending })
+        ), !stored.isEmpty else { return }
+
+        guard let binding = binding(for: .timeEntries), let composer = makeComposer(binding) else {
+            return
+        }
+        let outbox = Outbox(client: environment.notion, composer: composer, log: environment.log)
+
+        for entry in stored.sorted(by: { $0.startedAt < $1.startedAt }) {
+            if let next = entry.nextAttemptAt, next > Date() { continue }
+
+            let composed = ComposedEntry(localID: entry.localID, taskPageID: entry.taskPageID,
+                                         title: entry.title, startedAt: entry.startedAt,
+                                         endedAt: entry.endedAt,
+                                         durationMinutes: entry.durationMinutes,
+                                         mode: entry.mode,
+                                         outcome: SessionOutcome(rawValue: entry.outcomeRaw) ?? .ranToTerm,
+                                         shortenReason: entry.shortenReasonRaw
+                                            .flatMap(ShortenReason.init(rawValue:)),
+                                         subtractedIdleMinutes: entry.subtractedIdleMinutes)
+            let previous = AttemptOutcome(rawValue: entry.attemptOutcomeRaw) ?? .neverAttempted
+
+            switch await outbox.sendDetached(composed, afterAttempt: previous) {
+            case .sent:
+                markSent(entry.localID)
+            case .failedPermanently(let cause):
+                markFailed(entry.localID, cause: cause)
+            case .retryLater(let outcome, let cause):
+                markRetry(entry.localID, attemptOutcome: outcome, cause: cause)
+            }
+        }
+        refreshPendingCount()
+    }
+
+    /// FR-031 — réassigner une entrée en échec à une autre tâche avant renvoi.
+    func reassign(_ localID: UUID, to taskPageID: String) async {
+        update(localID) {
+            $0.taskPageID = taskPageID
+            $0.sendStateRaw = SendState.pending.rawValue
+            $0.failureCause = nil
+            // La tentative repart de zéro : la page n'a jamais existé.
+            $0.attemptOutcomeRaw = AttemptOutcome.neverAttempted.rawValue
+            $0.nextAttemptAt = nil
+        }
+        await environment.log.log(.sync, "entrée réassignée=\(localID) tâche=\(taskPageID)")
+        refreshPendingCount()
+        await drainOutbox()
     }
 
     // MARK: - File d'envoi
@@ -298,6 +580,10 @@ final class SessionController: ObservableObject {
             $0.failureCause = cause
             $0.attemptOutcomeRaw = attemptOutcome.rawValue
             $0.attemptCount += 1
+            // FR-029 — backoff plafonné : l'entrée n'est jamais abandonnée,
+            // seulement différée.
+            let delay = Outbox.retryDelay(forAttempt: $0.attemptCount)
+            $0.nextAttemptAt = Date().addingTimeInterval(delay.seconds)
         }
     }
 
@@ -314,6 +600,10 @@ final class SessionController: ObservableObject {
         pendingCount = (try? context.fetchCount(
             FetchDescriptor<OutboxEntry>(predicate: #Predicate { $0.sendStateRaw == pending })
         )) ?? 0
+        let failed = SendState.failedPermanently.rawValue
+        failedEntries = (try? context.fetch(
+            FetchDescriptor<OutboxEntry>(predicate: #Predicate { $0.sendStateRaw == failed })
+        )) ?? []
     }
 
     // MARK: - Utilitaires

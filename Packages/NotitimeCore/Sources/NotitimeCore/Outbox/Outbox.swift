@@ -42,15 +42,91 @@ public actor Outbox {
     /// C'est exactement ce qui se produisait en fin de pomodoro : la tâche du
     /// minuteur s'annulait elle-même avant de déclencher l'envoi. Détacher
     /// coupe cette dépendance à la racine (principe IV).
-    public func sendDetached(_ entry: ComposedEntry) async -> SendResult {
+    public func sendDetached(_ entry: ComposedEntry,
+                             afterAttempt previous: AttemptOutcome = .neverAttempted) async -> SendResult {
         await Task.detached(priority: .userInitiated) { [self] in
-            await send(entry)
+            await send(entry, afterAttempt: previous)
         }.value
+    }
+
+    // MARK: - Réessais (FR-029)
+
+    /// Premier délai de réessai. Court : la cause la plus fréquente est une
+    /// coupure passagère.
+    public static let firstRetryDelay = Duration.seconds(2)
+    /// Plafond. Au-delà, attendre davantage ne rend pas Notion plus disponible
+    /// et retarderait la reprise au retour du réseau.
+    public static let maximumRetryDelay = Duration.seconds(300)
+
+    /// Backoff exponentiel plafonné. `retryAfter` de Notion fait autorité :
+    /// c'est le serveur qui sait quand il acceptera de nouveau (FR-029).
+    public static func retryDelay(forAttempt attempt: Int,
+                                  retryAfter: Duration? = nil) -> Duration {
+        if let retryAfter { return retryAfter }
+        let exponent = max(0, attempt - 1)
+        let seconds = firstRetryDelay.seconds * pow(2, Double(exponent))
+        return .seconds(min(seconds, maximumRetryDelay.seconds))
+    }
+
+    /// US6.2 — la file se vide dans l'ordre où les sessions ont eu lieu.
+    public static func drainOrder(_ entries: [ComposedEntry]) -> [ComposedEntry] {
+        entries.sorted { $0.startedAt < $1.startedAt }
     }
 
     /// Tente de créer la page, puis publie le commentaire si la session en
     /// justifie un.
-    public func send(_ entry: ComposedEntry) async -> SendResult {
+    ///
+    /// `afterAttempt` porte l'issue de la tentative **précédente** : elle seule
+    /// décide de la vérification d'idempotence (FR-028, R-06).
+    public func send(_ entry: ComposedEntry,
+                     afterAttempt previous: AttemptOutcome = .neverAttempted) async -> SendResult {
+        if previous.requiresIdempotencyCheck {
+            switch await existingPage(for: entry) {
+            case .found(let pageID):
+                await log?.log(.sync, "entrée déjà présente dans Notion page=\(pageID) — "
+                               + "aucune création, doublon évité")
+                return .sent(pageID: pageID)
+            case .absent:
+                break
+            case .unknown(let cause):
+                // Ne jamais créer à l'aveugle : mieux vaut réessayer plus tard
+                // que produire un doublon qu'aucun mécanisme ne rattrapera.
+                await log?.log(.sync, "vérification d'idempotence impossible : \(cause) — "
+                               + "création différée")
+                return .retryLater(attemptOutcome: .indeterminate, cause: cause)
+            }
+        }
+        return await create(entry)
+    }
+
+    private enum ExistingPage {
+        case found(String)
+        case absent
+        case unknown(String)
+    }
+
+    /// Double interrogation par identifiant local : hors corbeille, puis dedans.
+    ///
+    /// Une entrée créée puis archivée entre-temps n'apparaît pas dans la
+    /// première : sans la seconde, elle serait recréée. R-06 documente la limite
+    /// de cette détection — une page purgée définitivement reste indétectable.
+    private func existingPage(for entry: ComposedEntry) async -> ExistingPage {
+        for includeArchived in [false, true] {
+            do {
+                let page = try await client.queryDataSource(
+                    composer.dataSourceID,
+                    body: composer.idempotencyQuery(for: entry, includeArchived: includeArchived),
+                    keepingTrashed: includeArchived
+                )
+                if let found = page.results.first { return .found(found.id) }
+            } catch {
+                return .unknown("\(error)")
+            }
+        }
+        return .absent
+    }
+
+    private func create(_ entry: ComposedEntry) async -> SendResult {
         await log?.log(.sync, "envoi entrée=\(entry.localID) durée=\(entry.durationMinutes)min "
                        + "issue=\(entry.outcome.rawValue)")
         do {

@@ -105,11 +105,15 @@ public actor NotionClient {
     /// Interroge une source de données. Le corps porte filtres, tri et curseur —
     /// les filtres sont poussés côté API pour ne pas rapatrier toute la base.
     public func queryDataSource(_ dataSourceID: String,
-                                body: [String: Any]) async throws -> NotionList<NotionPage> {
+                                body: [String: Any],
+                                keepingTrashed: Bool = false) async throws -> NotionList<NotionPage> {
         let page: NotionList<NotionPage> = try await post(NotionAPI.Path.queryDataSource(dataSourceID),
                                                           body: body)
         // Une page en corbeille reste renvoyée par l'API : la filtrer ici évite
         // de la proposer au choix, puis d'y rattacher une entrée de temps.
+        // La vérification d'idempotence, elle, veut voir la corbeille : une
+        // entrée archivée existe bel et bien et ne doit pas être recréée.
+        guard !keepingTrashed else { return page }
         return NotionList(results: page.results.filter { !$0.inTrash },
                           hasMore: page.hasMore, nextCursor: page.nextCursor)
     }

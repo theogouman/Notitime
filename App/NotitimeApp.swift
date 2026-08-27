@@ -93,11 +93,14 @@ final class RootState: ObservableObject {
             ]
             onboarding.restoreFromPersistence()
             Task {
+                await session.applySettings()
                 await validateAtStartup(environment)
                 // Une session retrouvée reprend la main avant toute autre chose :
                 // son état est déjà persisté, l'écran doit le refléter (FR-022).
                 await session.restore()
                 if onboarding.isConfigured { await session.loadTasks() }
+                // US6.2 — ce qui restait en file repart au lancement.
+                await session.drainOutbox()
             }
         } catch {
             startupMessage = error.localizedDescription
@@ -113,6 +116,29 @@ final class RootState: ObservableObject {
             return "Connecté à Notion."
         }
         return "Connecté à \(onboarding.workspaceName)."
+    }
+
+    /// Cas limite « quitter l'app volontairement » : une session en cours suit
+    /// la règle de son mode. On ne quitte jamais en perdant du temps travaillé.
+    func requestTermination() {
+        guard let session, session.hasRunningSession else { return NSApp.terminate(nil) }
+
+        let alert = NSAlert()
+        alert.messageText = "Une session est en cours"
+        alert.informativeText = "Quitter maintenant la clôturera et enverra l'entrée "
+            + "correspondante dans Notion."
+        alert.addButton(withTitle: "Clôturer et quitter")
+        alert.addButton(withTitle: "Annuler")
+        alert.alertStyle = .warning
+        NSApp.activate(ignoringOtherApps: true)
+
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        Task {
+            await session.stop()
+            // L'envoi est détaché : on lui laisse le temps d'aboutir.
+            await session.drainOutbox()
+            NSApp.terminate(nil)
+        }
     }
 
     var containerOrEmpty: ModelContainer {
@@ -175,7 +201,7 @@ struct RootView: View {
             }
 
             Divider()
-            Button("Quitter") { NSApp.terminate(nil) }
+            Button("Quitter") { state.requestTermination() }
                 .keyboardShortcut("q")
         }
         .padding(12)

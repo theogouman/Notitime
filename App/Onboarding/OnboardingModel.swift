@@ -78,6 +78,14 @@ final class OnboardingModel: ObservableObject {
             let authorization = try await environment.connection.connect(
                 code: callback.code, state: callback.state, verifier: verifier
             )
+            // T109 — changer de workspace invalide les entrées en attente, qui
+            // référencent des pages de l'ancien. On prévient avant d'écraser.
+            if await environment.connection.isDifferentWorkspace(authorization) {
+                await environment.log.log(.auth, "workspace différent : "
+                                          + "la configuration précédente est remplacée")
+                emptyReason = "Vous avez changé de workspace. Les bases liées et les "
+                            + "entrées en attente de l'ancien workspace ne sont plus valides."
+            }
             workspaceName = authorization.workspaceName ?? ""
             ownerName = authorization.owner?.user?.name ?? ""
             persist(authorization)
@@ -164,6 +172,46 @@ final class OnboardingModel: ObservableObject {
 
     private func makeDiscovery() -> RoleDiscovery {
         RoleDiscovery(client: environment.notion, time: environment.time, log: environment.log)
+    }
+
+    /// FR-006a, T105 — revalide chaque rôle lié et re-résout une source
+    /// disparue : une seule candidate est proposée, plusieurs demandent un
+    /// choix, aucune rend la configuration invalide.
+    func revalidate() async {
+        step = .discovering
+        let context = environment.container.mainContext
+        let stored = (try? context.fetch(FetchDescriptor<DatabaseBinding>())) ?? []
+        var broken: [DatabaseRole] = []
+
+        for binding in stored {
+            guard let role = DatabaseRole(rawValue: binding.roleRaw) else { continue }
+            do {
+                let source = try await environment.notion.retrieveDataSource(id: binding.dataSourceID)
+                let validation = SchemaValidator().validate(source, as: role,
+                                                            existingMap: binding.propertyRefs)
+                if case .missing(let missing, _, _) = validation {
+                    missingByRole[role] = missing
+                    broken.append(role)
+                }
+            } catch {
+                // Source disparue : le rôle redevient à désigner.
+                await environment.log.log(.sync, "source disparue rôle=\(role.rawValue)")
+                broken.append(role)
+            }
+        }
+
+        reloadBindings()
+        if broken.isEmpty {
+            step = .ready
+            emptyReason = ""
+        } else {
+            await browseAccessibleSources()
+            notice(for: broken)
+        }
+    }
+
+    private func notice(for broken: [DatabaseRole]) {
+        emptyReason = "À revalider : " + broken.map(\.rawValue).joined(separator: ", ")
     }
 
     /// Relance la détection sans refaire l'OAuth (recours 1 de l'écran vide).

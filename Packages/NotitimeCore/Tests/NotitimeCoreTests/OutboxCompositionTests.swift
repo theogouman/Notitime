@@ -234,3 +234,28 @@ final class OutboxCompositionTests: XCTestCase {
         return nil
     }
 }
+
+/// T108 — cas limite « invité » : sans identifiant utilisateur exploitable, la
+/// propriété Personne est omise plutôt que de faire échouer l'entrée.
+final class GuestAccountCompositionTests: XCTestCase {
+
+    func testEntryIsStillComposedWithoutAPersonID() throws {
+        let mapper = PropertyMapper(map: [
+            .entryTitle: PropertyRef(id: "title", name: "Name", type: "title"),
+            .entryPerson: PropertyRef(id: "p-per", name: "Responsable", type: "people")
+        ])
+        let composer = EntryComposer(mapper: mapper, dataSourceID: "ds",
+                                     personUserID: "", taskTitleLookup: { _ in "T" })
+        let start = ISO8601DateFormatter().date(from: "2026-08-27T14:30:00Z")!
+        let session = CompletedSession(localID: UUID(), taskPageID: "t", mode: .pomodoro,
+                                       startedAt: start, endedAt: start.addingTimeInterval(1500),
+                                       effectiveSeconds: 1500, outcome: .ranToTerm,
+                                       shortenReason: nil, subtractedIdleSeconds: 0)
+
+        let body = composer.pageBody(for: composer.compose(session))
+        let properties = try XCTUnwrap(body["properties"] as? [String: Any])
+
+        XCTAssertNil(properties["Responsable"], "la propriété est omise, pas vide")
+        XCTAssertNotNil(properties["Name"], "le reste de l'entrée est intact")
+    }
+}

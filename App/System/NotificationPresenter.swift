@@ -22,6 +22,9 @@ final class NotificationPresenter {
     /// C'est la raison pour laquelle aucun son ne se faisait entendre.
     private var sound: NSSound?
 
+    /// FR-032 — le son est désactivable indépendamment de la notification.
+    var soundEnabled = true
+
     init(log: SessionLog? = nil) {
         self.log = log
     }
@@ -59,6 +62,7 @@ final class NotificationPresenter {
     /// notifications sont refusées — ce qui est le cas d'un bundle non signé.
     /// C'est aujourd'hui le seul retour de fin de session garanti.
     private func playSound() {
+        guard soundEnabled else { return }
         guard let sound = NSSound(named: "Glass") ?? NSSound(named: "Ping") else { return }
         sound.stop()
         self.sound = sound

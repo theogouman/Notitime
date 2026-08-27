@@ -7,8 +7,20 @@ public struct SessionSettings: Sendable, Equatable {
     public var shortBreakSeconds: Int = 5 * 60
     public var longBreakSeconds: Int = 15 * 60
     public var pomodorosBeforeLongBreak: Int = 4
+    /// FR-024 — seuil d'inactivité, et activation **par mode**.
+    ///
+    /// Désactivée en Pomodoro par défaut : lire un document sans toucher au
+    /// clavier reste du travail, et la durée y est bornée par la cible. Activée
+    /// en Tracker, où l'oubli d'arrêter est la première source d'erreur.
+    public var idleThresholdSeconds: Int = 5 * 60
+    public var idleDetectionInTracker = true
+    public var idleDetectionInPomodoro = false
 
     public init() {}
+
+    public func idleDetectionEnabled(in mode: SessionMode) -> Bool {
+        mode == .tracker ? idleDetectionInTracker : idleDetectionInPomodoro
+    }
 }
 
 /// Pause proposée après un pomodoro allé à son terme (FR-020).
@@ -33,6 +45,8 @@ public enum SessionEvent: Sendable, Equatable {
     case stopByUser
     case systemWillSleep
     case systemDidWake
+    /// Inactivité constatée par le système, en secondes cumulées (FR-024).
+    case idleDetected(seconds: Int)
 }
 
 public enum RefusalReason: Sendable, Equatable {
@@ -66,11 +80,16 @@ public struct CompletedSession: Sendable, Equatable {
     /// Reste local : publié dans le commentaire, jamais dans une propriété.
     public let shortenReason: ShortenReason?
     public let subtractedIdleSeconds: Int
+    /// Inactivité détectée mais **pas encore arbitrée** (FR-024).
+    ///
+    /// Non nulle, elle signale à l'interface qu'il faut demander à l'utilisateur
+    /// s'il conserve ou retranche, avant toute mise en file.
+    public let pendingIdleSeconds: Int
 
     public init(localID: UUID, taskPageID: String, mode: SessionMode,
                 startedAt: Date, endedAt: Date, effectiveSeconds: Int,
                 outcome: SessionOutcome, shortenReason: ShortenReason?,
-                subtractedIdleSeconds: Int) {
+                subtractedIdleSeconds: Int, pendingIdleSeconds: Int = 0) {
         self.localID = localID
         self.taskPageID = taskPageID
         self.mode = mode
@@ -80,7 +99,38 @@ public struct CompletedSession: Sendable, Equatable {
         self.outcome = outcome
         self.shortenReason = shortenReason
         self.subtractedIdleSeconds = subtractedIdleSeconds
+        self.pendingIdleSeconds = pendingIdleSeconds
     }
+
+    /// FR-024 — retranche l'inactivité. Le **résultat** ne change pas : un
+    /// pomodoro allé à son terme dont on retranche de l'inactivité reste
+    /// « Complété », et la série n'en souffre pas.
+    public func subtractingIdle() -> CompletedSession {
+        CompletedSession(localID: localID, taskPageID: taskPageID, mode: mode,
+                         startedAt: startedAt, endedAt: endedAt,
+                         effectiveSeconds: max(0, effectiveSeconds - pendingIdleSeconds),
+                         outcome: outcome, shortenReason: shortenReason,
+                         subtractedIdleSeconds: subtractedIdleSeconds + pendingIdleSeconds,
+                         pendingIdleSeconds: 0)
+    }
+
+    /// L'utilisateur estime avoir travaillé : la durée reste entière.
+    public func keepingIdle() -> CompletedSession {
+        CompletedSession(localID: localID, taskPageID: taskPageID, mode: mode,
+                         startedAt: startedAt, endedAt: endedAt,
+                         effectiveSeconds: effectiveSeconds, outcome: outcome,
+                         shortenReason: shortenReason,
+                         subtractedIdleSeconds: subtractedIdleSeconds, pendingIdleSeconds: 0)
+    }
+}
+
+/// Ce qu'une session retrouvée au démarrage devient (US5.6).
+public enum RestoredSession: Sendable, Equatable {
+    case nothing
+    /// Pomodoro clôturé d'office, daté du dernier battement connu.
+    case closed(CompletedSession)
+    /// Tracker présenté en pause : l'utilisateur décide.
+    case paused(SessionSnapshot)
 }
 
 /// État persistable de la session en cours (FR-022).
@@ -153,11 +203,49 @@ public actor SessionMachine {
 
     public func update(settings: SessionSettings) { self.settings = settings }
 
-    /// Restaure l'état persisté. Le traitement des sessions retrouvées relève
-    /// de l'US5 ; ici on se contente de reprendre la main sur ce qui existe.
+    /// Reprend la main sur l'état persisté, sans rien décider.
     public func restore() async {
         snapshot = await persistence.load()
         streak = snapshot?.completedPomodoroStreak ?? streak
+    }
+
+    /// US5.6 — traite une session retrouvée après un arrêt inopiné.
+    ///
+    /// Un pomodoro est clôturé d'office : sa cible est dépassée ou son décompte
+    /// perdu, et le laisser courir fausserait la durée. Un Tracker, lui, est
+    /// présenté **en pause** : sa durée est libre, l'utilisateur peut vouloir
+    /// reprendre. On ne tranche pas à sa place.
+    ///
+    /// La fin est datée du dernier battement connu — le dernier instant où l'on
+    /// sait que l'application vivait.
+    public func restoreSession() async -> RestoredSession {
+        await restore()
+        guard let current = snapshot else { return .nothing }
+
+        // Une pause de repos n'a jamais produit d'entrée : rien à restaurer.
+        guard !current.isBreak else {
+            await persist(nil)
+            return .nothing
+        }
+
+        if current.mode == .pomodoro {
+            let result = await close(current, at: current.lastHeartbeatAt,
+                                     outcome: .shortened, reason: .unexpectedQuit)
+            if case .finished(let session, _) = result {
+                await log?.log(.session, "session retrouvée close au dernier battement")
+                return .closed(session)
+            }
+            return .nothing
+        }
+
+        var paused = current
+        if paused.state == .running {
+            paused.state = .paused
+            paused.pauseIntervals.append(DateInterval(start: current.lastHeartbeatAt, duration: 0))
+        }
+        await persist(paused)
+        await log?.log(.session, "suivi libre retrouvé, présenté en pause")
+        return .paused(paused)
     }
 
     @discardableResult
@@ -187,7 +275,27 @@ public actor SessionMachine {
             return await sleep()
         case .systemDidWake:
             return await resume()
+        case .idleDetected(let seconds):
+            return await noteIdle(seconds: seconds)
         }
+    }
+
+    /// FR-024 — accumule l'inactivité constatée, si le mode l'active.
+    ///
+    /// On mémorise seulement la durée : l'arbitrage — conserver ou retrancher —
+    /// n'a lieu qu'à la clôture, quand l'utilisateur peut décider en connaissance
+    /// de cause.
+    private func noteIdle(seconds: Int) async -> SessionResult {
+        guard var current = snapshot, !current.isBreak, seconds > 0 else { return .none }
+        guard settings.idleDetectionEnabled(in: current.mode) else { return .none }
+
+        let end = time.wallClock
+        current.idleIntervals.append(
+            DateInterval(start: end.addingTimeInterval(TimeInterval(-seconds)), end: end))
+        current.lastHeartbeatAt = end
+        await persist(current)
+        await log?.log(.session, "inactivité constatée=\(seconds)s mode=\(current.mode.rawValue)")
+        return .none
     }
 
     private func start(taskPageID: String, mode: SessionMode,
@@ -294,6 +402,13 @@ public actor SessionMachine {
             await persist(nil)
             return .breakEnded
         }
+        // Arrêter un suivi libre est son déroulement normal : l'utilisateur en
+        // fixe lui-même la durée, il n'y a aucune cible à manquer. Le classer
+        // « Écourté » ferait passer chaque session Tracker pour un incident
+        // (data-model §4, US4.3).
+        if current.mode == .tracker && reason == .user {
+            return await close(current, at: end, outcome: .ranToTerm, reason: nil)
+        }
         return await close(current, at: end, outcome: .shortened, reason: reason)
     }
 
@@ -335,7 +450,8 @@ public actor SessionMachine {
                                        effectiveSeconds: effective,
                                        outcome: outcome,
                                        shortenReason: reason,
-                                       subtractedIdleSeconds: 0)
+                                       subtractedIdleSeconds: 0,
+                                       pendingIdleSeconds: pendingIdle(of: current, until: end))
         await persist(nil)
         await log?.log(.session, "session close mode=\(current.mode.rawValue) "
                        + "durée=\(effective)s issue=\(outcome.rawValue) série=\(streak)")
@@ -351,8 +467,18 @@ public actor SessionMachine {
         let paused = current.pauseIntervals.reduce(0.0) { total, interval in
             total + max(0, min(interval.end, end).timeIntervalSince(interval.start))
         }
-        let idle = current.idleIntervals.reduce(0.0) { $0 + $1.duration }
-        return max(0, Int((elapsed - paused - idle).rounded()))
+        // L'inactivité n'est **pas** retranchée ici : elle est soumise à
+        // l'utilisateur, qui peut l'avoir passée à lire ou à réfléchir (FR-024).
+        return max(0, Int((elapsed - paused).rounded()))
+    }
+
+    /// Inactivité détectée pendant la session, en attente d'arbitrage.
+    private func pendingIdle(of current: SessionSnapshot, until end: Date) -> Int {
+        guard settings.idleDetectionEnabled(in: current.mode) else { return 0 }
+        let total = current.idleIntervals
+            .filter { $0.start < end }
+            .reduce(0.0) { $0 + min($1.end, end).timeIntervalSince($1.start) }
+        return max(0, Int(total.rounded()))
     }
 
     /// Écrit **avant** de rendre la main. Tout le reste de la machine en dépend.
@@ -375,6 +501,7 @@ private extension SessionEvent {
         case .stopByUser: return "arrêter"
         case .systemWillSleep: return "veille"
         case .systemDidWake: return "réveil"
+        case .idleDetected(let seconds): return "inactivité(\(seconds)s)"
         }
     }
 }

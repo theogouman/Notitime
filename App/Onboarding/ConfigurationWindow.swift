@@ -41,7 +41,18 @@ struct ConfigurationView: View {
                 }
 
                 if let onboarding = state.onboarding {
-                    OnboardingView(model: onboarding)
+                    TabView {
+                        ScrollView {
+                            OnboardingView(model: onboarding)
+                                .padding(4)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        .tabItem { Label("Connexion", systemImage: "link") }
+
+                        SettingsView(state: state)
+                            .tabItem { Label("Réglages", systemImage: "gearshape") }
+                    }
+                    .frame(minHeight: 380)
                 } else {
                     Text("Notitime n'a pas pu démarrer.").font(.callout)
                 }
