@@ -99,7 +99,7 @@ La file d'envoi durable (FR-027). Une entrée y est créée **avant** toute tent
 
 | Champ | Type | Notes |
 |---|---|---|
-| `localID` | `UUID` | Identifiant local, écrit dans Notion pour l'idempotence (FR-028) |
+| `localID` | `UUID` | Généré à la création de la session, écrit dans la propriété « ID » de Notion pour l'idempotence (FR-028) |
 | `taskPageID` | `String` | Réassignable en cas d'échec définitif (FR-031) |
 | `title` | `String` | Titre généré, voir §3 |
 | `startedAt` / `endedAt` | `Date` | UTC |
@@ -148,7 +148,7 @@ Les pages en corbeille ne sont pas retournées par l'interrogation d'une source,
 | `type` | `select` | oui | `Pomodoro`, `Tracker` |
 | `status` | `select` | oui | `Complété`, `Écourté` |
 | `person` | `people` | oui | Utilisateur courant ; omise si Notion la refuse pour un invité, avec information unique à l'utilisateur |
-| `localID` | `rich_text` | oui | Identifiant local, support de l'idempotence (FR-028) |
+| `localID` | `rich_text` | oui | Nom par défaut « ID ». Support de l'idempotence (FR-028) : valeur générée par l'application avant l'envoi, donc jamais une formule ni l'identifiant auto-incrémenté de Notion, dont la valeur n'existe qu'après création |
 
 ### Base Projets — optionnelle, lue seulement
 

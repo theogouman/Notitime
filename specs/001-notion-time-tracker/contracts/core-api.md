@@ -32,7 +32,8 @@
 
 1. Une session éligible produit exactement une entrée de file (FR-026).
 2. Aucune entrée ne quitte la file avant confirmation que la page existe (FR-027).
-3. Aucun réessai d'issue indéterminée ne part sans vérification préalable par identifiant local (FR-028).
-4. Aucune requête ne contourne le limiteur de débit (FR-029).
-5. Aucune ligne de journal ne contient de token, de code OAuth ou de contenu de tâche au-delà de son identifiant (FR-037).
-6. Aucun démarrage de session n'est possible sans tâche sélectionnée (FR-015).
+3. Aucun réessai d'issue indéterminée ne part sans vérification préalable par identifiant local, lu dans la propriété `rich_text` « ID » par défaut (FR-028).
+4. Aucune vérification d'idempotence n'est émise en dehors de ce cas : ni à la première tentative, ni après une réponse d'erreur explicite de Notion (FR-028).
+5. Aucune requête ne contourne le limiteur de débit (FR-029).
+6. Aucune ligne de journal ne contient de token, de code OAuth ou de contenu de tâche au-delà de son identifiant (FR-037).
+7. Aucun démarrage de session n'est possible sans tâche sélectionnée (FR-015).

@@ -227,7 +227,7 @@ Trois racines de code, conformément à la décision de structure de `plan.md` :
 ### Implementation for User Story 6
 
 - [ ] T092 [US6] Implémenter le suivi de `attemptOutcome` (écrit avant l'envoi, corrigé à réception) dans `Outbox.swift` (R-06)
-- [ ] T093 [US6] Implémenter la vérification d'idempotence conditionnelle par double interrogation sur `localID` — sans `is_archived` puis avec `is_archived: true` — dans `Outbox.swift` (FR-028, R-06)
+- [ ] T093 [US6] Implémenter la vérification d'idempotence **conditionnelle** — uniquement avant un réessai d'issue indéterminée — par double interrogation sur la propriété « ID » (`rich_text`), sans `is_archived` puis avec `is_archived: true`, dans `Outbox.swift` (FR-028, R-06)
 - [ ] T094 [US6] Implémenter le backoff plafonné, le respect de `Retry-After` et la reprise automatique au retour du réseau dans `Outbox.swift` (FR-029, US6.2)
 - [ ] T095 [US6] Implémenter le marquage d'échec définitif et la conservation locale consultable dans `Outbox.swift` (FR-030, US6.5)
 - [ ] T096 [US6] Implémenter l'indicateur « N entrées en attente » et le détail d'un échec définitif avec son action de résolution dans `App/MenuBar/` (FR-030)

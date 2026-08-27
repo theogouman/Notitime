@@ -22,7 +22,7 @@ Liste close des appels que `NotitimeCore` adresse à Notion. Tout appel hors de 
 | Résoudre les sources d'une base | `GET /v1/databases/{database_id}` → `data_sources[]` (`id`, `name`) | Après découverte, et à chaque revalidation d'un rôle | FR-004, FR-007 |
 | Lire le schéma d'une source | `GET /v1/data_sources/{data_source_id}` → `properties` | Validation, à chaque assignation ou changement | FR-006, FR-007 |
 | Interroger une source | `POST /v1/data_sources/{data_source_id}/query` | Rafraîchissement des tâches et des projets | FR-009 |
-| Interroger Time Entries par `localID` | `POST /v1/data_sources/{data_source_id}/query` filtré sur la propriété Identifiant local, **exécuté deux fois** : sans `is_archived` puis avec `is_archived: true` | **Uniquement** avant un réessai d'issue indéterminée | FR-028, R-06 |
+| Interroger Time Entries par `localID` | `POST /v1/data_sources/{data_source_id}/query` filtré sur la propriété d'identifiant local (« ID » par défaut, `rich_text`), **exécuté deux fois** : sans `is_archived` puis avec `is_archived: true` | **Uniquement** avant un réessai d'issue indéterminée | FR-028, R-06 |
 
 Le filtre de l'interrogation des tâches porte le statut non terminé et, quand la propriété Personne est mappée, l'utilisateur courant — poussés côté API et non appliqués après coup (FR-009). La pagination se suit par `start_cursor` / `page_size` en requête et `has_more` / `next_cursor` en réponse, jusqu'à épuisement, sans plafond.
 
