@@ -18,5 +18,15 @@ PRODUCTS="build/DerivedData/Build/Products/Release"
 
 mkdir -p dist
 cp -R "$PRODUCTS/Notitime.app" dist/
+
+# Signature ad-hoc. Elle ne coûte ni compte développeur ni certificat, et donne
+# au bundle une identité de code — ce qui manque à un bundle non signé pour que
+# le centre de notifications accepte de lui accorder une autorisation (FR-032).
+# Elle ne remplace pas une signature Developer ID : Gatekeeper demandera
+# toujours une autorisation manuelle à la première ouverture.
+echo "== Signature ad-hoc =="
+codesign --force --deep --sign - dist/Notitime.app
+codesign --verify --verbose=1 dist/Notitime.app 2>&1 | sed 's/^/  /'
+
 echo "Bundle produit : dist/Notitime.app"
 lipo -archs dist/Notitime.app/Contents/MacOS/Notitime

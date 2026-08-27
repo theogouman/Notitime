@@ -10,13 +10,10 @@ import NotitimeCore
 @MainActor
 final class SessionController: ObservableObject {
 
-    enum Phase: Equatable {
-        case idle
-        case running(remaining: Duration?, taskTitle: String)
-        case onBreak(remaining: Duration, isLong: Bool)
-    }
-
-    @Published private(set) var phase: Phase = .idle
+    @Published private(set) var phase: SessionPhase = .idle
+    /// Pause proposée, en attente de décision. Distincte d'une pause en cours :
+    /// tant qu'elle n'est pas acceptée, la machine ne tient aucune session.
+    private var suggestedBreak: BreakKind?
     @Published private(set) var tasks: [FetchedTask] = []
     @Published private(set) var isLoadingTasks = false
     /// Message court affiché sous le menu : issue du dernier envoi, refus, etc.
@@ -72,6 +69,7 @@ final class SessionController: ObservableObject {
             notice = "Choisissez d'abord une tâche."
             return
         }
+        suggestedBreak = nil
         let target = Duration.seconds((minutes ?? settings.pomodoroSeconds / 60) * 60)
         let result = await machine.handle(.start(taskPageID: taskID, mode: .pomodoro, target: target))
         await react(to: result)
@@ -79,10 +77,24 @@ final class SessionController: ObservableObject {
     }
 
     func stop() async {
+        // La vue ne propose plus d'arrêter hors session ; cette garde couvre la
+        // course entre un pomodoro qui se termine seul et un clic simultané.
+        guard phase.offersStop else {
+            suggestedBreak = nil
+            await refreshPhase()
+            return
+        }
         await react(to: await machine.handle(.stopByUser))
     }
 
+    /// L'utilisateur décline la pause proposée.
+    func dismissBreak() async {
+        suggestedBreak = nil
+        await refreshPhase()
+    }
+
     func startBreak(_ kind: BreakKind) async {
+        suggestedBreak = nil
         await react(to: await machine.handle(.startBreak(kind)))
         startTicking()
     }
@@ -124,6 +136,7 @@ final class SessionController: ObservableObject {
             await refreshPhase()
 
         case .breakEnded:
+            suggestedBreak = nil
             notice = "Pause terminée."
             ticker?.cancel()
             await refreshPhase()
@@ -140,28 +153,21 @@ final class SessionController: ObservableObject {
                     minutes: EntryComposer.minutes(session.effectiveSeconds))
             }
             await deliver(session)
+            suggestedBreak = suggestion
+            await refreshPhase()
             if let suggestion {
-                phase = .onBreak(remaining: suggestion.duration, isLong: suggestion.isLong)
                 notice = suggestion.isLong ? "Pomodoro terminé. Pause longue proposée."
                                            : "Pomodoro terminé. Pause courte proposée."
             }
         }
     }
 
+    /// Unique point de mise à jour de la phase : elle se **dérive** de l'état de
+    /// la machine et n'est jamais posée à la main.
     private func refreshPhase() async {
-        guard let snapshot = await machine.snapshot else {
-            phase = .idle
-            return
-        }
-        let elapsed = environment.time.wallClock.timeIntervalSince(snapshot.startedAt)
-        let remaining = snapshot.targetSeconds.map {
-            Duration.seconds(max(0, Double($0) - elapsed))
-        }
-        if snapshot.isBreak {
-            phase = .onBreak(remaining: remaining ?? .seconds(0), isLong: false)
-        } else {
-            phase = .running(remaining: remaining, taskTitle: title(of: snapshot.taskPageID))
-        }
+        phase = SessionPhase.derive(snapshot: await machine.snapshot,
+                                    suggestedBreak: suggestedBreak,
+                                    now: environment.time.wallClock)
     }
 
     // MARK: - Envoi
@@ -177,6 +183,8 @@ final class SessionController: ObservableObject {
 
         let entry = composer.compose(session)
         persist(entry)
+        await environment.log.log(.sync, "entrée mise en file=\(entry.localID) "
+                                  + "tâche=\(entry.taskPageID) durée=\(entry.durationMinutes)min")
         refreshPendingCount()
 
         let outbox = Outbox(client: environment.notion, composer: composer, log: environment.log)
@@ -187,9 +195,13 @@ final class SessionController: ObservableObject {
             notice = "Entrée de \(entry.durationMinutes) min envoyée dans Notion."
         case .failedPermanently(let cause):
             markFailed(entry.localID, cause: cause)
+            await environment.log.log(.error, "entrée en échec définitif=\(entry.localID), "
+                                      + "conservée en file pour réassignation")
             notice = "Notion a refusé l'entrée : \(cause)"
         case .retryLater(let attemptOutcome, let cause):
             markRetry(entry.localID, attemptOutcome: attemptOutcome, cause: cause)
+            await environment.log.log(.sync, "entrée laissée en file=\(entry.localID) "
+                                      + "tentatives=\(attemptCount(of: entry.localID))")
             notice = "Entrée en attente : \(cause)"
         }
         refreshPendingCount()
@@ -268,6 +280,13 @@ final class SessionController: ObservableObject {
         }
     }
 
+    private func attemptCount(of localID: UUID) -> Int {
+        let context = environment.container.mainContext
+        return (try? context.fetch(
+            FetchDescriptor<OutboxEntry>(predicate: #Predicate { $0.localID == localID })
+        ).first?.attemptCount) ?? 0
+    }
+
     private func refreshPendingCount() {
         let context = environment.container.mainContext
         let pending = SendState.pending.rawValue
@@ -285,7 +304,7 @@ final class SessionController: ObservableObject {
         ).first
     }
 
-    private func title(of pageID: String) -> String {
+    func title(of pageID: String) -> String {
         tasks.first { $0.id == pageID }?.title ?? "Tâche"
     }
 

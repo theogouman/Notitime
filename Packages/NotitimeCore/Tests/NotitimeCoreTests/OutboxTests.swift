@@ -167,3 +167,84 @@ final class OutboxTests: XCTestCase {
         XCTAssertTrue(serialized.contains("utilisateur"), "obtenu : \(serialized)")
     }
 }
+
+/// Toute tentative d'envoi doit laisser une trace de son **issue**.
+///
+/// En production, le journal s'arrêtait à « envoi entrée=… » : le chemin
+/// heureux était instrumenté, les échecs non. Un envoi qui échoue est
+/// exactement le cas où la trace compte.
+final class OutboxLoggingTests: XCTestCase {
+
+    private var directory: URL!
+
+    override func setUpWithError() throws {
+        directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("notitime-outbox-log-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    }
+
+    override func tearDownWithError() throws {
+        try? FileManager.default.removeItem(at: directory)
+    }
+
+    private func makeOutbox(_ transport: FixtureTransport, log: SessionLog) -> Outbox {
+        Outbox(client: NotionClient(transport: transport,
+                                    authorization: StaticAuthorization(),
+                                    rateLimiter: .forTesting(VirtualTimeSource())),
+               composer: EntryComposer(mapper: PropertyMapper(map: [
+                    .entryTitle: PropertyRef(id: "title", name: "Name", type: "title"),
+                    .entryTask: PropertyRef(id: "p-task", name: "Tâches", type: "relation")
+               ]), dataSourceID: "ds", personUserID: "u-1", taskTitleLookup: { _ in "T" }),
+               log: log)
+    }
+
+    private func entry() -> ComposedEntry {
+        let start = ISO8601DateFormatter().date(from: "2026-08-27T14:30:00Z")!
+        return ComposedEntry(localID: UUID(), taskPageID: "t-1", title: "T",
+                             startedAt: start, endedAt: start.addingTimeInterval(300),
+                             durationMinutes: 5, mode: .pomodoro, outcome: .ranToTerm,
+                             shortenReason: nil, subtractedIdleMinutes: 0)
+    }
+
+    func testPermanentFailureIsLogged() async throws {
+        let log = SessionLog(directory: directory, time: VirtualTimeSource())
+        let transport = FixtureTransport()
+        await transport.enqueue(.post, NotionAPI.Path.pages, status: 400,
+                                json: #"{"object":"error","code":"validation_error","message":"Status is expected to be status."}"#)
+
+        _ = await makeOutbox(transport, log: log).send(entry())
+
+        let contents = await log.exportedContents()
+        XCTAssertTrue(contents.contains("définitif") || contents.contains("refusé"),
+                      "l'échec définitif doit être tracé, obtenu : \(contents)")
+        XCTAssertTrue(contents.contains("400") || contents.contains("validation"),
+                      "avec la cause, obtenu : \(contents)")
+    }
+
+    func testRetryableFailureIsLogged() async throws {
+        let log = SessionLog(directory: directory, time: VirtualTimeSource())
+        let transport = FixtureTransport()
+        await transport.enqueue(.post, NotionAPI.Path.pages, status: 503, json: "{}")
+
+        _ = await makeOutbox(transport, log: log).send(entry())
+
+        let contents = await log.exportedContents()
+        XCTAssertTrue(contents.contains("réessayer"), "obtenu : \(contents)")
+        XCTAssertTrue(contents.contains("explicitError"),
+                      "l'issue de la tentative décide du réessai : elle doit figurer")
+    }
+
+    /// L'identifiant de page créée est ce qui permet de retrouver l'entrée dans
+    /// Notion depuis le journal : il ne doit pas manquer.
+    func testSuccessLogsTheCreatedPageID() async throws {
+        let log = SessionLog(directory: directory, time: VirtualTimeSource())
+        let transport = FixtureTransport()
+        await transport.enqueue(.post, NotionAPI.Path.pages, status: 200,
+                                json: #"{"object":"page","id":"page-abc"}"#)
+
+        _ = await makeOutbox(transport, log: log).send(entry())
+
+        let contents = await log.exportedContents()
+        XCTAssertTrue(contents.contains("page-abc"), "obtenu : \(contents)")
+    }
+}

@@ -185,6 +185,32 @@ Conséquences pratiques :
   d'accès au trousseau — sans quoi un clic sur « Refuser » obligerait à refaire
   tout le parcours OAuth. Deux tests le verrouillent dans `AuthTests`.
 
+**Les notifications système exigent une identité de code.**
+`UNUserNotificationCenter` refuse d'accorder une autorisation à un bundle sans
+identité de code stable : `requestAuthorization` échoue en `UNErrorDomain`, et
+aucune notification n'est présentée. C'est la même racine que la sollicitation
+du trousseau ci-dessus — l'absence de signature —, mais la conséquence diffère :
+le trousseau demande confirmation à l'utilisateur, le centre de notifications,
+lui, refuse sans recours.
+
+Ce qui est fait, et ce qui ne l'est pas :
+
+- `scripts/package.sh` applique désormais une **signature ad-hoc**
+  (`codesign --sign -`). Elle ne coûte ni compte développeur ni certificat et
+  donne au bundle une identité de code. C'est la seule piste sans signature
+  Developer ID ; si elle ne suffit pas sur une machine donnée, les notifications
+  y resteront indisponibles jusqu'à une vraie signature.
+- **Le son de fin ne dépend pas de tout cela.** Il est joué par `NSSound`, en
+  amont de toute autorisation, et reste donc audible même quand la notification
+  est refusée. C'est le retour de fin de session garanti par défaut (FR-032).
+- Le journal consigne le domaine et le code exacts de l'erreur, pour distinguer
+  un refus d'autorisation d'une indisponibilité du service.
+
+À noter : `NSSound(named:)?.play()` ne joue rien de fiable. `play()` rend la
+main immédiatement et l'objet temporaire est libéré avant la fin de la lecture ;
+le son doit être retenu le temps qu'il s'exécute. C'est ce qui expliquait
+l'absence de son en plus de l'absence de notification.
+
 ## Dette technique assumée
 
 **Mode langage Swift 5 sur toolchain 6.3.3.** Le package est déclaré en `swift-tools-version:5.10`, conformément au socle « Swift 5.10 minimum » des contraintes techniques. La toolchain réellement installée est la 6.3.3, mais la déclaration place la compilation en **mode langage Swift 5** : la vérification stricte de la concurrence n'est donc pas appliquée, et les annotations `Sendable` ne sont pas contrôlées par le compilateur.

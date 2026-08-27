@@ -56,12 +56,24 @@ struct SessionControls: View {
                         .disabled(controller.selectedTaskID == nil)
                 }
 
-            case .running(let remaining, let taskTitle):
-                Text(taskTitle).font(.callout).lineLimit(1)
+            case .running(let remaining, let taskPageID):
+                Text(controller.title(of: taskPageID)).font(.callout).lineLimit(1)
                 Text(SessionControls.format(remaining))
                     .font(.system(.title2, design: .monospaced))
                 // FR-018 : en Pomodoro, « Arrêter » est la seule commande.
                 Button("Arrêter") { Task { await controller.stop() } }
+
+            case .breakSuggested(let kind):
+                // Rien ne tourne : on propose de commencer la pause, jamais de
+                // l'arrêter — c'est ce bouton d'arrêt fantôme qui échouait.
+                Text(kind.isLong ? "Pause longue proposée" : "Pause proposée")
+                    .font(.callout)
+                HStack(spacing: 6) {
+                    Button("Prendre la pause") { Task { await controller.startBreak(kind) } }
+                        .buttonStyle(.borderedProminent)
+                    Button("Repartir") { Task { await controller.startPomodoro(minutes: 25) } }
+                    Button("Plus tard") { Task { await controller.dismissBreak() } }
+                }
 
             case .onBreak(let remaining, let isLong):
                 Text(isLong ? "Pause longue" : "Pause").font(.callout)

@@ -41,12 +41,33 @@ public actor Outbox {
             await publishComment(for: entry, on: pageID)
             return .sent(pageID: pageID)
         } catch let error as NotionError {
-            return classify(error, for: entry)
+            let result = classify(error, for: entry)
+            await trace(result, entry: entry, status: error.status)
+            return result
         } catch {
             // Aucune réponse : on ne sait pas si la page existe. Le réessai
             // devra vérifier avant de recréer, sous peine de doublon (R-06).
-            await log?.log(.error, "envoi sans réponse entrée=\(entry.localID) : issue indéterminée")
+            await log?.log(.error, "envoi sans réponse entrée=\(entry.localID) : "
+                           + "issue indéterminée, réessai avec vérification")
             return .retryLater(attemptOutcome: .indeterminate, cause: "\(error)")
+        }
+    }
+
+    /// Toute tentative laisse une trace de son issue.
+    ///
+    /// Le chemin heureux seul ne suffit pas : un envoi qui échoue est justement
+    /// celui qu'on cherche à comprendre dans le journal.
+    private func trace(_ result: SendResult, entry: ComposedEntry, status: Int?) async {
+        let code = status.map { " http=\($0)" } ?? ""
+        switch result {
+        case .sent(let pageID):
+            await log?.log(.sync, "entrée créée page=\(pageID)")
+        case .failedPermanently(let cause):
+            await log?.log(.error, "envoi refusé définitivement entrée=\(entry.localID)"
+                           + "\(code) : \(cause)")
+        case .retryLater(let attemptOutcome, let cause):
+            await log?.log(.sync, "envoi à réessayer entrée=\(entry.localID)\(code) "
+                           + "issue=\(attemptOutcome.rawValue) : \(cause)")
         }
     }
 

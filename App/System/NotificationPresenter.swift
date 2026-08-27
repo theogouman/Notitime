@@ -15,6 +15,12 @@ final class NotificationPresenter {
     private var authorizationRequested = false
     /// Le refus se constate une fois ; on cesse alors de solliciter le système.
     private var authorized = true
+    /// Retenu le temps de la lecture.
+    ///
+    /// `NSSound(named:)?.play()` ne joue rien de façon fiable : `play()` rend la
+    /// main immédiatement et l'objet temporaire est libéré avant la fin du son.
+    /// C'est la raison pour laquelle aucun son ne se faisait entendre.
+    private var sound: NSSound?
 
     init(log: SessionLog? = nil) {
         self.log = log
@@ -50,9 +56,13 @@ final class NotificationPresenter {
     }
 
     /// Son indépendant de la notification : il reste audible même quand les
-    /// notifications sont refusées ou en mode Concentration.
+    /// notifications sont refusées — ce qui est le cas d'un bundle non signé.
+    /// C'est aujourd'hui le seul retour de fin de session garanti.
     private func playSound() {
-        NSSound(named: "Glass")?.play()
+        guard let sound = NSSound(named: "Glass") ?? NSSound(named: "Ping") else { return }
+        sound.stop()
+        self.sound = sound
+        sound.play()
     }
 
     private func ensureAuthorization() async -> Bool {
@@ -69,10 +79,15 @@ final class NotificationPresenter {
             }
             return authorized
         } catch {
-            // Un bundle non signé peut se voir refuser l'accès au centre de
-            // notifications. Ce n'est pas une raison d'interrompre la session.
+            // Un bundle non signé se voit refuser l'accès au centre de
+            // notifications : il n'a pas d'identité de code stable à laquelle
+            // rattacher une autorisation. Ce n'est pas une raison d'interrompre
+            // la session — le son, lui, reste joué.
             authorized = false
-            await log?.log(.error, "notifications indisponibles : \(error)")
+            let detail = (error as NSError)
+            await log?.log(.error, "notifications indisponibles "
+                           + "(\(detail.domain) code=\(detail.code)) : \(detail.localizedDescription) "
+                           + "— bundle non signé ; le son de fin reste joué")
             return false
         }
     }

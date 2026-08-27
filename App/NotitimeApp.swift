@@ -208,12 +208,16 @@ struct MenuBarLabel: View {
 
     var body: some View {
         switch state.session?.phase {
-        case .running(let remaining, let taskTitle):
+        case .running(let remaining, let taskPageID):
             // Le nom est raccourci : la barre de menus est étroite, et le
             // compte à rebours est ce qu'on vient y lire.
-            Text("\(SessionControls.format(remaining)) · \(MenuBarLabel.short(taskTitle))")
+            let title = state.session?.title(of: taskPageID) ?? "Tâche"
+            Text("\(SessionControls.format(remaining)) · \(MenuBarLabel.short(title))")
         case .onBreak(let remaining, _):
             Text("☕︎ \(SessionControls.format(remaining))")
+        case .breakSuggested:
+            // La session est finie : l'icône seule, pas un décompte figé.
+            Image(systemName: "timer")
         default:
             Image(systemName: "timer")
         }
