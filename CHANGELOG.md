@@ -54,6 +54,16 @@ Comportements visibles par l'utilisateur, dans l'ordre des livraisons.
 
 ### Sessions (US2, US4)
 
+- Démarrage en deux temps, sans changer d'écran : la liste de tâches se replie
+  quand on en choisit une, et le choix de la méthode s'ouvre sous son nom —
+  durées de pomodoro d'un côté, suivi libre de l'autre. Le chevron, un clic sur
+  l'en-tête ou la touche Échap ramènent à la liste, la recherche intacte.
+- La dernière méthode lancée est mise en avant et se déclenche à la touche
+  Entrée : reprendre une tâche familière tient en deux clics.
+- Les flèches parcourent la liste, Entrée déplie la tâche visée.
+- Réassigner une entrée en échec se fait depuis sa propre liste déroulante, et
+  ne dépend plus de la tâche sélectionnée ailleurs dans le menu.
+
 - Pomodoro à durée fixe et suivi libre à durée libre, sur une tâche choisie.
 - Compte à rebours ou temps écoulé dans la barre de menus, avec le nom court de
   la tâche.

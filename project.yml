@@ -51,6 +51,10 @@ targets:
         # Icône du Dock, du Finder et de « À propos ». Le catalogue est compilé
         # en Assets.car ; `CFBundleIconName` doit y renvoyer par le même nom.
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        # Alimente `Localizable.xcstrings` depuis les chaînes du code à chaque
+        # build : sans cela le catalogue ne reçoit que ce qu'on y écrit à la
+        # main, et diverge silencieusement de l'interface (FR-036).
+        SWIFT_EMIT_LOC_STRINGS: YES
         GENERATE_INFOPLIST_FILE: NO
         ENABLE_HARDENED_RUNTIME: YES
         # Pas de sandbox en v1 : la sandbox n'est pas contournée, elle n'est

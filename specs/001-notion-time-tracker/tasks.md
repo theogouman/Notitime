@@ -155,6 +155,8 @@ Trois racines de code, conformément à la décision de structure de `plan.md` :
 - [X] T068 [US3] Implémenter la liste de tâches du menu avec projet affiché et section « Récentes » dans `App/MenuBar/TaskList.swift` (FR-012, FR-014)
 - [X] T069 [US3] Implémenter les états du menu — indicateur de premier chargement, liste vide qualifiée avec son action, Notion injoignable avec heure de dernière synchronisation réussie — dans `App/MenuBar/TaskListStates.swift` (FR-015a, US3.7 à US3.11)
 
+- [X] T115 [US3] Remplacer le sélecteur et les deux boutons de lancement par un flux en accordéon dans le popover — la tâche se choisit dans la liste, la méthode s'ouvre sous son en-tête, la dernière méthode utilisée étant mise en avant et déclenchée par Entrée — dans `App/MenuBar/TaskLauncher.swift`, `TaskList.swift` et `SessionControls.swift` (FR-013, FR-014, FR-015, FR-016, FR-018, FR-031, SC-002)
+
 **Checkpoint**: la sélection de tâche est confortable ; US2 reste fonctionnelle.
 
 ---

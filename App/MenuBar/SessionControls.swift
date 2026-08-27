@@ -1,62 +1,16 @@
 import SwiftUI
 import NotitimeCore
 
-/// T056 — liste brute de sélection de tâche.
-///
-/// Volontairement sommaire : ni recherche, ni section « Récentes », ni filtre.
-/// C'est l'US3 qui rendra la sélection confortable ; ici il s'agit seulement de
-/// pouvoir choisir une tâche et démarrer (FR-015).
-struct BasicTaskPicker: View {
-
-    @ObservedObject var controller: SessionController
-    @State private var query = ""
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            // FR-013 — filtre local, sans requête réseau.
-            TextField("Rechercher une tâche…", text: $query)
-                .textFieldStyle(.roundedBorder)
-                .onChange(of: query) { _, text in Task { await controller.search(text) } }
-
-            if controller.isLoadingTasks {
-                HStack(spacing: 6) {
-                    ProgressView().controlSize(.small)
-                    Text("Chargement des tâches…").font(.callout)
-                }
-            } else if controller.tasks.isEmpty {
-                // FR-015a — jamais de liste vide muette, et une action pour en sortir.
-                Text(controller.notice ?? "Aucune tâche à proposer.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                HStack(spacing: 6) {
-                    if !query.isEmpty {
-                        Button("Effacer la recherche") {
-                            query = ""
-                            Task { await controller.search("") }
-                        }
-                    }
-                    Button("Recharger") { Task { await controller.loadTasks() } }
-                }
-            } else {
-                Picker("Tâche", selection: $controller.selectedTaskID) {
-                    ForEach(controller.tasks) { task in
-                        // FR-014 — les récentes sont marquées et remontent en tête.
-                        Text(controller.recentIDs.contains(task.id) ? "★ \(task.title)" : task.title)
-                            .tag(Optional(task.id))
-                    }
-                }
-                .labelsHidden()
-                .pickerStyle(.menu)
-            }
-        }
-    }
-}
-
 /// T057, T059 — contrôles de session du menu.
 struct SessionControls: View {
 
     @ObservedObject var controller: SessionController
+    /// Tâche dépliée dans le lanceur. Partagée avec le menu : reprendre après
+    /// une pause rouvre le panneau sur la tâche courante plutôt que la liste.
+    @State private var expandedTask: String?
+    /// Tâche visée par une réassignation, indépendante du lanceur : le choix
+    /// d'une cible de rattrapage n'est pas celui d'une prochaine session.
+    @State private var reassignTarget: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -66,14 +20,7 @@ struct SessionControls: View {
                     // FR-024 — l'arbitrage passe avant toute nouvelle session.
                     idleArbitration(pending)
                 } else {
-                    BasicTaskPicker(controller: controller)
-                    HStack(spacing: 6) {
-                        Button("Pomodoro") { Task { await controller.startPomodoro() } }
-                            .buttonStyle(.borderedProminent)
-                            .disabled(controller.selectedTaskID == nil)
-                        Button("Suivi libre") { Task { await controller.startTracker() } }
-                            .disabled(controller.selectedTaskID == nil)
-                    }
+                    TaskLauncher(controller: controller, expanded: $expandedTask)
                 }
 
             case .running(let remaining, let taskPageID):
@@ -98,7 +45,7 @@ struct SessionControls: View {
                 HStack(spacing: 6) {
                     Button("Prendre la pause") { Task { await controller.startBreak(kind) } }
                         .buttonStyle(.borderedProminent)
-                    Button("Repartir") { Task { await controller.startPomodoro(minutes: 25) } }
+                    Button("Repartir") { Task { await resume() } }
                     Button("Plus tard") { Task { await controller.dismissBreak() } }
                 }
 
@@ -108,7 +55,7 @@ struct SessionControls: View {
                     .font(.system(.title2, design: .monospaced))
                 HStack(spacing: 6) {
                     // US2.2 : on doit pouvoir repartir immédiatement.
-                    Button("Repartir") { Task { await controller.startPomodoro(minutes: 25) } }
+                    Button("Repartir") { Task { await resume() } }
                     Button("Terminer la pause") { Task { await controller.stop() } }
                 }
             }
@@ -130,19 +77,55 @@ struct SessionControls: View {
                 }
             }
             ForEach(controller.failedEntries, id: \.localID) { entry in
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Échec : \(entry.title)").font(.caption).bold()
-                    Text(entry.failureCause ?? "cause inconnue")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                    if let target = controller.selectedTaskID {
-                        // FR-031 — réassigner à la tâche sélectionnée avant renvoi.
-                        Button("Réassigner à la tâche choisie") {
-                            Task { await controller.reassign(entry.localID, to: target) }
+                failure(entry)
+            }
+        }
+    }
+
+    /// « Repartir » ramène au choix de la méthode sur la même tâche : la pause
+    /// est close, et le panneau s'ouvre déplié plutôt que de repartir d'office
+    /// sur une durée qu'on n'a pas choisie.
+    private func resume() async {
+        let task = controller.selectedTaskID
+        if controller.phase.offersStop {
+            await controller.stop()
+        } else {
+            await controller.dismissBreak()
+        }
+        expandedTask = task
+    }
+
+    /// FR-031 — réassigner une entrée en échec à une autre tâche avant renvoi.
+    @ViewBuilder
+    private func failure(_ entry: OutboxEntry) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Échec : \(entry.title)").font(.caption).bold()
+            Text(entry.failureCause ?? "cause inconnue")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            if controller.tasks.isEmpty {
+                Text("Aucune tâche en cache pour réassigner cette entrée.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                HStack(spacing: 6) {
+                    Picker("", selection: $reassignTarget) {
+                        Text("Choisir une tâche…").tag(String?.none)
+                        ForEach(controller.tasks) { task in
+                            Text(task.title).tag(Optional(task.id))
                         }
-                        .controlSize(.small)
                     }
+                    .labelsHidden()
+                    .controlSize(.small)
+
+                    Button("Réassigner") {
+                        guard let target = reassignTarget else { return }
+                        Task { await controller.reassign(entry.localID, to: target) }
+                    }
+                    .controlSize(.small)
+                    .disabled(reassignTarget == nil)
                 }
             }
         }

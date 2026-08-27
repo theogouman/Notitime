@@ -401,6 +401,11 @@ public final class AppSettings {
     public var taskRefreshIntervalMinutes: Int
     public var showUnassignedTasks: Bool
     public var doneStatusValues: [String]
+    /// Dernière méthode lancée, pour la proposer en premier (SC-002).
+    /// `SessionMode.rawValue`, ou `nil` tant qu'aucune session n'a eu lieu.
+    public var lastMethodRaw: String?
+    /// Durée du dernier pomodoro lancé, en minutes.
+    public var lastMethodMinutes: Int?
 
     /// Les valeurs par défaut doivent permettre d'utiliser l'app sans jamais
     /// ouvrir les réglages (US7). Elles reprennent FR-018 et FR-024.
@@ -416,7 +421,8 @@ public final class AppSettings {
                 // dit ce qu'être terminé veut dire dans la base de l'utilisateur.
                 // Une liste écrite ici serait du vocabulaire supposé — et « Done »
                 // faisait rejeter la requête entière sur une base francophone.
-                doneStatusValues: [String] = []) {
+                doneStatusValues: [String] = [],
+                lastMethodRaw: String? = nil, lastMethodMinutes: Int? = nil) {
         self.singletonKey = "settings"
         self.pomodoroMinutes = pomodoroMinutes
         self.shortBreakMinutes = shortBreakMinutes
@@ -431,6 +437,8 @@ public final class AppSettings {
         self.focusShortcutName = focusShortcutName
         self.taskRefreshIntervalMinutes = taskRefreshIntervalMinutes
         self.showUnassignedTasks = showUnassignedTasks
+        self.lastMethodRaw = lastMethodRaw
+        self.lastMethodMinutes = lastMethodMinutes
         self.doneStatusValues = doneStatusValues
     }
 }

@@ -35,6 +35,12 @@ final class SessionController: ObservableObject {
     @Published private(set) var isPaused = false
     /// Temps écoulé, pour le suivi libre qui n'a pas de compte à rebours.
     @Published private(set) var elapsedLabel = "00:00"
+    /// Titres des projets, par identifiant de page.
+    ///
+    /// Le cache de tâches ne retient que l'identifiant du projet : afficher
+    /// celui-ci sous une tâche n'apprendrait rien. Les titres sont donc lus une
+    /// fois par lancement, depuis la base Projets déjà liée.
+    @Published private(set) var projectNames: [String: String] = [:]
 
     private let environment: AppEnvironment
     private let machine: SessionMachine
@@ -134,6 +140,7 @@ final class SessionController: ObservableObject {
             lastSync = await cache.lastSuccessfulSync
             notice = tasks.isEmpty ? emptyTaskMessage(filters) : nil
             if selectedTaskID == nil { selectedTaskID = tasks.first?.id }
+            await loadProjectNames()
         } catch {
             await environment.log.log(.error, "chargement des tâches en échec : \(error)")
             // FR-015a — le cache reste utilisable, et l'utilisateur sait de
@@ -142,6 +149,64 @@ final class SessionController: ObservableObject {
             notice = stamp.map { "Notion est injoignable. Tâches synchronisées à \($0)." }
                 ?? "Notion est injoignable et aucune synchronisation n'a encore abouti."
         }
+    }
+
+    /// Titres des projets liés, lus une seule fois : ils changent rarement, et
+    /// une requête à chaque rafraîchissement des tâches coûterait le quota pour
+    /// une information stable. Un échec est silencieux — le projet n'est qu'un
+    /// complément d'affichage, il ne doit jamais empêcher de choisir une tâche.
+    private func loadProjectNames() async {
+        guard projectNames.isEmpty, let binding = binding(for: .projects) else { return }
+        let mapper = PropertyMapper(map: binding.propertyRefs)
+        var names: [String: String] = [:]
+        var cursor: String?
+        repeat {
+            var body: [String: Any] = ["page_size": 100]
+            if let cursor { body["start_cursor"] = cursor }
+            guard let page = try? await environment.notion.queryDataSource(binding.dataSourceID,
+                                                                          body: body) else { return }
+            for project in page.results {
+                if let title = mapper.readTitle(.projectTitle, from: project.properties) {
+                    names[project.id] = title
+                }
+            }
+            cursor = page.hasMore ? page.nextCursor : nil
+        } while cursor != nil
+        projectNames = names
+    }
+
+    /// Nom du projet d'une tâche, quand il est connu.
+    func projectName(of task: CachedTaskItem) -> String? {
+        task.projectPageID.flatMap { projectNames[$0] }
+    }
+
+    // MARK: - Méthodes de lancement (FR-016, FR-018)
+
+    /// Durées proposées : les deux préréglages de FR-018, plus la durée
+    /// personnalisée des réglages si elle en diffère.
+    var pomodoroPresets: [Int] {
+        let standard = PomodoroPreset.allCases.map(\.pomodoroMinutes)
+        let custom = storedSettings?.pomodoroMinutes
+        guard let custom, !standard.contains(custom) else { return standard }
+        return (standard + [custom]).sorted()
+    }
+
+    /// Dernière méthode lancée, à mettre en avant au prochain choix (SC-002).
+    var lastMethod: (mode: SessionMode, minutes: Int?)? {
+        guard let raw = storedSettings?.lastMethodRaw,
+              let mode = SessionMode(rawValue: raw) else { return nil }
+        return (mode, storedSettings?.lastMethodMinutes)
+    }
+
+    private var storedSettings: AppSettings? {
+        try? environment.container.mainContext.fetch(FetchDescriptor<AppSettings>()).first
+    }
+
+    private func rememberMethod(_ mode: SessionMode, minutes: Int?) {
+        guard let stored = storedSettings else { return }
+        stored.lastMethodRaw = mode.rawValue
+        stored.lastMethodMinutes = minutes
+        try? environment.container.mainContext.save()
     }
 
     /// FR-015a — une liste vide s'explique, avec l'action correspondante.
@@ -191,7 +256,9 @@ final class SessionController: ObservableObject {
         let shortcut = (try? environment.container.mainContext
             .fetch(FetchDescriptor<AppSettings>()).first)?.focusShortcutName
         await FocusModeService.run(shortcutNamed: shortcut, log: environment.log)
-        let target = Duration.seconds((minutes ?? settings.pomodoroSeconds / 60) * 60)
+        let chosen = minutes ?? settings.pomodoroSeconds / 60
+        rememberMethod(.pomodoro, minutes: chosen)
+        let target = Duration.seconds(chosen * 60)
         let result = await machine.handle(.start(taskPageID: taskID, mode: .pomodoro, target: target))
         await react(to: result)
         startTicking()
@@ -205,6 +272,7 @@ final class SessionController: ObservableObject {
             return
         }
         suggestedBreak = nil
+        rememberMethod(.tracker, minutes: nil)
         await cache?.noteUse(of: taskID)
         await react(to: await machine.handle(.start(taskPageID: taskID, mode: .tracker,
                                                     target: nil)))
