@@ -235,3 +235,25 @@ actor CountingTokenStore: TokenStore {
         refresh = nil
     }
 }
+
+
+/// Fait s'écouler du temps **en battant le minuteur**, comme une session réelle.
+///
+/// Une session en cours reçoit un tick par seconde : la machine ne voit jamais
+/// plusieurs minutes s'écouler entre deux battements. Avancer l'horloge sans
+/// battre revient à simuler une suspension du processus — ce que la machine
+/// détecte désormais, et à juste titre. S'arrête au premier résultat
+/// significatif : une session close ne reçoit plus de ticks.
+@discardableResult
+func beat(_ machine: SessionMachine, _ time: VirtualTimeSource,
+          for seconds: Int, step: Int = 20) async -> SessionResult {
+    var remaining = seconds
+    while remaining > 0 {
+        let slice = min(step, remaining)
+        time.advance(by: .seconds(slice))
+        remaining -= slice
+        let result = await machine.handle(.tick)
+        if result != .none { return result }
+    }
+    return .none
+}

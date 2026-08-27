@@ -26,8 +26,7 @@ final class InterruptionTests: XCTestCase {
 
         // Un premier pomodoro complet pour établir une série.
         await machine.handle(.start(taskPageID: task, mode: .pomodoro, target: .seconds(1500)))
-        time.advance(by: .seconds(1500))
-        _ = await machine.handle(.tick)
+        await beat(machine, time, for: 1500)
 
         await machine.handle(.start(taskPageID: task, mode: .pomodoro, target: .seconds(1500)))
         time.advance(by: .seconds(400))
@@ -124,8 +123,7 @@ final class InterruptionTests: XCTestCase {
         await machine.handle(.start(taskPageID: task, mode: .pomodoro, target: .seconds(1500)))
         time.advance(by: .seconds(600))
         await machine.handle(.idleDetected(seconds: 300))
-        time.advance(by: .seconds(900))
-        let result = await machine.handle(.tick)
+        let result = await beat(machine, time, for: 900)
 
         guard case .finished(let session, _) = result else { return XCTFail("obtenu \(result)") }
         XCTAssertEqual(session.outcome, .ranToTerm, "le pomodoro est bien allé à son terme")
@@ -149,8 +147,7 @@ final class InterruptionTests: XCTestCase {
         await machine.handle(.start(taskPageID: task, mode: .pomodoro, target: .seconds(1500)))
         time.advance(by: .seconds(600))
         await machine.handle(.idleDetected(seconds: 300))
-        time.advance(by: .seconds(900))
-        guard case .finished(let session, _) = await machine.handle(.tick) else {
+        guard case .finished(let session, _) = await beat(machine, time, for: 900) else {
             return XCTFail("session non close")
         }
 
@@ -166,11 +163,10 @@ final class InterruptionTests: XCTestCase {
         let (machine, time, _) = makeMachine()
 
         await machine.handle(.start(taskPageID: task, mode: .pomodoro, target: .seconds(1500)))
-        time.advance(by: .seconds(600))
+        await beat(machine, time, for: 600)
         await machine.handle(.idleDetected(seconds: 300))
-        time.advance(by: .seconds(900))
 
-        guard case .finished(let session, _) = await machine.handle(.tick) else {
+        guard case .finished(let session, _) = await beat(machine, time, for: 900) else {
             return XCTFail("session non close")
         }
         XCTAssertEqual(session.pendingIdleSeconds, 0, "l'inactivité est ignorée en Pomodoro")
@@ -272,5 +268,120 @@ final class InterruptionTests: XCTestCase {
         XCTAssertEqual(restored, .nothing)
         let current = await machine.snapshot
         XCTAssertNil(current)
+    }
+}
+
+/// Filet de sécurité indépendant des notifications système.
+///
+/// Fermer le clapet avec un écran externe ne met pas le Mac en veille ; une
+/// notification peut aussi manquer, arriver trop tard, ou l'application être
+/// suspendue par le système sans qu'aucune veille n'ait lieu. Dans tous ces cas
+/// le seul témoin est l'horloge : entre deux ticks censés se suivre à la
+/// seconde, un écart de plusieurs minutes prouve que le processus n'a pas tourné.
+final class ClockJumpTests: XCTestCase {
+
+    private let task = "task-page-1"
+
+    private func makeMachine() -> (SessionMachine, VirtualTimeSource) {
+        let time = VirtualTimeSource()
+        return (SessionMachine(time: time, persistence: RecordingSessionPersistence(),
+                               settings: SessionSettings()), time)
+    }
+
+    /// Un suivi libre survit au saut, mais le temps non travaillé en est retiré :
+    /// c'est exactement ce qu'une veille détectée aurait produit.
+    func testTrackerExcludesTheSuspendedTimeAndKeepsRunning() async throws {
+        let (machine, time) = makeMachine()
+        await machine.handle(.start(taskPageID: task, mode: .tracker, target: nil))
+
+        await beat(machine, time, for: 120)      // 2 min réellement travaillées
+        time.advance(by: .seconds(600))          // le processus ne tourne pas
+        let result = await machine.handle(.tick)
+
+        XCTAssertEqual(result, SessionResult.none, "le suivi libre continue")
+        let snapshot = await machine.snapshot
+        XCTAssertEqual(snapshot?.state, .running)
+
+        time.advance(by: .seconds(60))
+        guard case .finished(let session, _) = await machine.handle(.stopByUser) else {
+            return XCTFail("le suivi libre doit se clore normalement")
+        }
+        XCTAssertEqual(session.effectiveSeconds, 180,
+                       "180 s travaillées, 600 s de suspension retirées")
+    }
+
+    /// Un pomodoro suspendu est clos **à l'instant du dernier tick connu** :
+    /// dater la fin de maintenant compterait comme travaillé un temps qui ne
+    /// l'a pas été.
+    func testPomodoroIsClosedAtTheLastKnownTick() async throws {
+        let (machine, time) = makeMachine()
+        await machine.handle(.start(taskPageID: task, mode: .pomodoro, target: .seconds(1500)))
+
+        await beat(machine, time, for: 300)
+        let lastKnown = time.wallClock
+        time.advance(by: .seconds(3600))
+        let result = await machine.handle(.tick)
+
+        guard case .finished(let session, let suggestion) = result else {
+            return XCTFail("obtenu \(result)")
+        }
+        XCTAssertEqual(session.outcome, .shortened)
+        XCTAssertEqual(session.shortenReason, .sleep)
+        XCTAssertEqual(session.endedAt, lastKnown)
+        XCTAssertEqual(session.effectiveSeconds, 300)
+        XCTAssertNil(suggestion, "aucune pause proposée après un pomodoro écourté")
+    }
+
+    /// Une pause qui traverse une suspension est terminée : la reprendre au
+    /// réveil ferait courir un décompte que personne n'a vu.
+    func testBreakEndsAcrossASuspension() async throws {
+        let (machine, time) = makeMachine()
+        await machine.handle(.startBreak(.short(.seconds(300))))
+
+        await beat(machine, time, for: 60)
+        time.advance(by: .seconds(900))
+
+        let afterJump = await machine.handle(.tick)
+        XCTAssertEqual(afterJump, .breakEnded)
+    }
+
+    /// Le seuil ne doit pas se déclencher sur la gigue ordinaire : le journal
+    /// réel montre des ticks à une ou deux secondes d'intervalle.
+    func testOrdinaryJitterIsNotASuspension() async throws {
+        let (machine, time) = makeMachine()
+        await machine.handle(.start(taskPageID: task, mode: .tracker, target: nil))
+
+        for _ in 0..<10 {
+            time.advance(by: .seconds(2))
+            let tick = await machine.handle(.tick)
+            XCTAssertEqual(tick, SessionResult.none)
+        }
+
+        await beat(machine, time, for: 60)
+        guard case .finished(let session, _) = await machine.handle(.stopByUser) else {
+            return XCTFail("obtenu autre chose qu'une clôture")
+        }
+        XCTAssertEqual(session.effectiveSeconds, 80, "aucune pause n'a été insérée")
+    }
+
+    /// Une session déjà en pause — veille détectée, puis saut constaté — ne doit
+    /// pas empiler une seconde pause : le temps serait retranché deux fois.
+    func testAPausedTrackerDoesNotAccumulateASecondPause() async throws {
+        let (machine, time) = makeMachine()
+        await machine.handle(.start(taskPageID: task, mode: .tracker, target: nil))
+        await beat(machine, time, for: 120)
+        await machine.handle(.systemWillSleep)
+
+        time.advance(by: .seconds(900))
+        _ = await machine.handle(.tick)
+        await machine.handle(.systemDidWake)
+
+        time.advance(by: .seconds(60))
+        guard case .finished(let session, _) = await machine.handle(.stopByUser) else {
+            return XCTFail("obtenu autre chose qu'une clôture")
+        }
+        XCTAssertEqual(session.effectiveSeconds, 180)
+        let snapshot = await machine.snapshot
+        XCTAssertNil(snapshot)
     }
 }

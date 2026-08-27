@@ -40,6 +40,17 @@ Comportements visibles par l'utilisateur, dans l'ordre des livraisons.
 - Une session de moins d'une minute n'est pas enregistrée, et le dit.
 - Son de fin de session, et notification système lorsque macOS l'autorise.
 
+### Interruptions (US5)
+
+- Détection des suspensions par saut d'horloge : si plus de trente secondes
+  s'écoulent entre deux battements du minuteur, le temps non travaillé est
+  retranché d'un suivi libre et un pomodoro est clos à son dernier instant connu.
+  Jusque-là, une veille non annoncée par le système — clapet fermé avec un écran
+  externe, par exemple — était comptée comme du temps de travail.
+- Le journal consigne tous les événements système observés : veille, réveil,
+  veille des écrans, verrouillage, changement d'utilisateur, extinction, en
+  indiquant pour chacun s'il est traité ou seulement constaté.
+
 ### Entrées de temps (US2, US6)
 
 - La méthode et le statut écrits dans Time Tracker sont projetés sur les options

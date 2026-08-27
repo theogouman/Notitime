@@ -26,8 +26,7 @@ final class PomodoroMachineTests: XCTestCase {
         let (machine, time, _) = makeMachine()
 
         await machine.handle(.start(taskPageID: task, mode: .pomodoro, target: .seconds(1500)))
-        time.advance(by: .seconds(1500))
-        let result = await machine.handle(.tick)
+        let result = await beat(machine, time, for: 1500)
 
         guard case .finished(let session, _) = result else {
             return XCTFail("attendu terminé, obtenu \(result)")
@@ -44,8 +43,7 @@ final class PomodoroMachineTests: XCTestCase {
         let (machine, time, _) = makeMachine()
 
         await machine.handle(.start(taskPageID: task, mode: .pomodoro, target: .seconds(1500)))
-        time.advance(by: .seconds(1800))
-        let result = await machine.handle(.tick)
+        let result = await beat(machine, time, for: 1800)
 
         guard case .finished(let session, _) = result else {
             return XCTFail("attendu terminé, obtenu \(result)")
@@ -115,8 +113,7 @@ final class PomodoroMachineTests: XCTestCase {
         let (machine, time, _) = makeMachine()
 
         await machine.handle(.start(taskPageID: task, mode: .pomodoro, target: .seconds(60)))
-        time.advance(by: .seconds(60))
-        _ = await machine.handle(.tick)
+        await beat(machine, time, for: 60)
         let streak = await machine.streak
         XCTAssertEqual(streak, 1)
 
@@ -139,8 +136,7 @@ final class PomodoroMachineTests: XCTestCase {
         var breaks: [BreakKind] = []
         for _ in 1...4 {
             await machine.handle(.start(taskPageID: task, mode: .pomodoro, target: .seconds(1500)))
-            time.advance(by: .seconds(1500))
-            guard case .finished(_, let suggestion) = await machine.handle(.tick),
+            guard case .finished(_, let suggestion) = await beat(machine, time, for: 1500),
                   let suggestion else { return XCTFail("une pause doit être proposée") }
             breaks.append(suggestion)
         }
@@ -156,8 +152,7 @@ final class PomodoroMachineTests: XCTestCase {
         let (machine, time, _) = makeMachine()
 
         await machine.handle(.start(taskPageID: task, mode: .pomodoro, target: .seconds(1500)))
-        time.advance(by: .seconds(1500))
-        _ = await machine.handle(.tick)
+        await beat(machine, time, for: 1500)
         let streak = await machine.streak
         XCTAssertEqual(streak, 1)
 
@@ -188,12 +183,10 @@ final class PomodoroMachineTests: XCTestCase {
         let (machine, time, _) = makeMachine()
 
         await machine.handle(.start(taskPageID: task, mode: .pomodoro, target: .seconds(1500)))
-        time.advance(by: .seconds(1500))
-        _ = await machine.handle(.tick)
+        await beat(machine, time, for: 1500)
 
         await machine.handle(.startBreak(.short(.seconds(300))))
-        time.advance(by: .seconds(300))
-        let result = await machine.handle(.tick)
+        let result = await beat(machine, time, for: 300)
 
         XCTAssertEqual(result, .breakEnded, "une pause se termine, elle ne se comptabilise pas")
     }
@@ -203,8 +196,7 @@ final class PomodoroMachineTests: XCTestCase {
         let (machine, time, _) = makeMachine()
 
         await machine.handle(.start(taskPageID: task, mode: .pomodoro, target: .seconds(1500)))
-        time.advance(by: .seconds(1500))
-        _ = await machine.handle(.tick)
+        await beat(machine, time, for: 1500)
 
         await machine.handle(.startBreak(.short(.seconds(300))))
         time.advance(by: .seconds(90))
@@ -240,15 +232,14 @@ final class PomodoroMachineTests: XCTestCase {
         let afterStart = await persistence.stored
         XCTAssertEqual(afterStart??.taskPageID, task, "l'état est déjà écrit au retour")
 
-        time.advance(by: .seconds(60))
+        time.advance(by: .seconds(1))
         await machine.handle(.tick)
         let afterTickCount = await persistence.writeCount
         XCTAssertEqual(afterTickCount, 2, "un tick est une transition")
 
-        time.advance(by: .seconds(1440))
-        _ = await machine.handle(.tick)
+        await beat(machine, time, for: 1499)
         let afterEndCount = await persistence.writeCount
-        XCTAssertEqual(afterEndCount, 3)
+        XCTAssertGreaterThan(afterEndCount, afterTickCount, "la clôture écrit à son tour")
         let afterEnd = await persistence.stored
         XCTAssertEqual(afterEnd, .some(nil), "la session close est effacée, pas laissée derrière")
     }
@@ -260,8 +251,7 @@ final class PomodoroMachineTests: XCTestCase {
 
         await machine.handle(.start(taskPageID: task, mode: .pomodoro, target: .seconds(1500)))
         let first = await machine.snapshot?.lastHeartbeatAt
-        time.advance(by: .seconds(30))
-        await machine.handle(.tick)
+        await beat(machine, time, for: 30)
         let second = await machine.snapshot?.lastHeartbeatAt
 
         XCTAssertNotNil(first)

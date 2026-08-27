@@ -43,7 +43,7 @@ final class SessionController: ObservableObject {
     private var tickerGeneration = 0
     private var settings = SessionSettings()
     private let notifications: NotificationPresenter
-    private var sleepObserver: WorkspaceSleepObserver?
+    private var systemObserver: WorkspaceEventObserver?
     private var idleMonitor: EventInactivityMonitor?
     private var cache: TaskCache?
     private var drainTask: Task<Void, Never>?
@@ -260,12 +260,13 @@ final class SessionController: ObservableObject {
     }
 
     private func installSystemObservers() {
-        guard sleepObserver == nil else { return }
-        sleepObserver = WorkspaceSleepObserver(
+        guard systemObserver == nil else { return }
+        systemObserver = WorkspaceEventObserver(
+            log: environment.log,
             onSleep: { [weak self] in await self?.react(to: await self?.machine.handle(.systemWillSleep) ?? .none) },
             onWake: { [weak self] in await self?.react(to: await self?.machine.handle(.systemDidWake) ?? .none) }
         )
-        sleepObserver?.start()
+        systemObserver?.start()
     }
 
     private func startIdleMonitoring() {

@@ -182,6 +182,11 @@ public protocol SessionPersistence: Sendable {
 public actor SessionMachine {
 
     /// FR-023 — plancher d'éligibilité.
+    /// Écart entre deux ticks au-delà duquel le processus a manifestement été
+    /// suspendu. Trente secondes : le journal réel montre des ticks à une ou deux
+    /// secondes d'intervalle, jamais plus.
+    public static let suspensionThreshold = Duration.seconds(30)
+
     public static let minimumEffectiveSeconds = 60
 
     private let time: TimeSource
@@ -333,6 +338,17 @@ public actor SessionMachine {
     private func tick() async -> SessionResult {
         guard var current = snapshot else { return .refused(.nothingRunning) }
         let now = time.wallClock
+
+        // Filet de sécurité, indépendant des notifications système : le minuteur
+        // bat à la seconde, et la gigue ordinaire se compte en secondes. Un
+        // écart de cet ordre prouve que le processus n'a pas tourné — veille non
+        // annoncée, clapet fermé sur écran externe, application suspendue par le
+        // système. On ne devine pas la cause, on constate l'absence.
+        let sinceLastTick = now.timeIntervalSince(current.lastHeartbeatAt)
+        if sinceLastTick >= SessionMachine.suspensionThreshold.seconds {
+            return await handleSuspension(current, from: current.lastHeartbeatAt, to: now)
+        }
+
         current.lastHeartbeatAt = now
 
         // Un pomodoro n'arrive à son terme que par le compte à rebours ; le
@@ -348,6 +364,37 @@ public actor SessionMachine {
         }
 
         await persist(current)
+        return .none
+    }
+
+    /// Traite une suspension constatée après coup.
+    ///
+    /// Le temps suspendu n'a pas été travaillé : la seule date sûre est celle du
+    /// dernier tick. Les règles sont celles de la veille annoncée (FR-021,
+    /// US5.3) — un pomodoro est clos et écourté, un suivi libre se poursuit sans
+    /// compter le trou, une pause est terminée.
+    private func handleSuspension(_ current: SessionSnapshot,
+                                  from lastKnown: Date, to now: Date) async -> SessionResult {
+        let gap = Int(now.timeIntervalSince(lastKnown).rounded())
+        await log?.log(.session, "saut d'horloge \(gap)s — processus suspendu sans veille annoncée")
+
+        if current.isBreak {
+            await persist(nil)
+            return .breakEnded
+        }
+        if current.mode == .pomodoro {
+            return await close(current, at: lastKnown, outcome: .shortened, reason: .sleep)
+        }
+
+        var updated = current
+        // Déjà en pause — la veille avait bien été annoncée, le saut n'en est que
+        // la conséquence : la pause court toujours, en ajouter une seconde
+        // retrancherait le même temps deux fois.
+        if updated.state == .running {
+            updated.pauseIntervals.append(DateInterval(start: lastKnown, end: now))
+        }
+        updated.lastHeartbeatAt = now
+        await persist(updated)
         return .none
     }
 

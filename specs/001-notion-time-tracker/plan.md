@@ -196,6 +196,38 @@ Conséquences pratiques :
   rafraîchissement. `KeychainAccessTests` compte les lectures sur un cycle complet ;
   le journal porte une ligne `jeton lu au trousseau` qui doit rester unique.
 
+**Ce qui interrompt une session, et ce qui ne l'interrompt pas.**
+La règle est de s'en tenir à ce que le système annonce. Trois notifications
+seulement sont *traitées*, et une détection d'horloge sert de filet :
+
+| Événement | Pomodoro | Suivi libre | Pause |
+| --- | --- | --- | --- |
+| `willSleepNotification` | clos, « Écourté », daté à la veille | mis en pause | terminée |
+| `didWakeNotification` | — (déjà clos) | reprend | — |
+| Saut d'horloge ≥ 30 s | clos, daté au dernier tick connu | le trou est retranché, la session continue | terminée |
+| `screensDidSleep` / `screensDidWake` | rien | rien | rien |
+| `screenIsLocked` / `screenIsUnlocked` | rien | rien | rien |
+| `sessionDidResignActive` / `…BecomeActive` | rien | rien | rien |
+| `willPowerOff` | rien | rien | rien |
+
+Les quatre dernières lignes sont **observées et journalisées, jamais traitées**.
+Aucune n'est une veille : fermer le clapet avec un écran externe branché
+n'endort pas le Mac, et derrière un écran verrouillé le travail peut très bien
+continuer — une réunion, un appel, une lecture. Interrompre sur ces signaux
+retrancherait du temps réellement travaillé, ce qui est le sens contraire de
+FR-024, qui exige déjà l'accord de l'utilisateur avant de retrancher une
+inactivité pourtant mesurée. **Le verrouillage sans veille n'est donc pas
+couvert, délibérément** : il est journalisé pour qu'on puisse en décider sur
+pièces, et le point reste ouvert.
+
+**Le saut d'horloge est le seul filet indépendant du système.** Le minuteur bat
+à la seconde ; un écart de trente secondes ou plus entre deux ticks prouve que
+le processus n'a pas tourné, quelle qu'en soit la cause — veille non annoncée,
+notification manquée, suspension par macOS. La seule date sûre est celle du
+dernier tick : c'est elle qui borne le temps compté. Sans ce filet, un pomodoro
+traversant une suspension était enregistré « Complété » avec sa durée pleine,
+alors que rien n'avait été travaillé pendant le trou.
+
 **Les notifications système exigent une identité de code.**
 `UNUserNotificationCenter` refuse d'accorder une autorisation à un bundle sans
 identité de code stable : `requestAuthorization` échoue en `UNErrorDomain`, et

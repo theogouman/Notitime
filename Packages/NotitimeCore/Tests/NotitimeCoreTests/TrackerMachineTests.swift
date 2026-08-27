@@ -120,8 +120,7 @@ final class TrackerMachineTests: XCTestCase {
 
         await machine.handle(.start(taskPageID: task, mode: .tracker, target: nil))
         for _ in 1...10 {
-            time.advance(by: .seconds(600))
-            let result = await machine.handle(.tick)
+            let result = await beat(machine, time, for: 600)
             XCTAssertEqual(result, .none)
         }
 
