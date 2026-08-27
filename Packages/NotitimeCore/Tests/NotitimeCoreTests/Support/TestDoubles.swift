@@ -1,0 +1,142 @@
+import Foundation
+@testable import NotitimeCore
+
+/// Horloge virtuelle : `sleep` avance le temps instantanément.
+///
+/// Sans elle, chaque test de durée coûterait sa durée réelle, et la suite ne
+/// tournerait pas en CI en quelques secondes (principe VII).
+final class VirtualTimeSource: TimeSource, @unchecked Sendable {
+    private let lock = NSLock()
+    private var _monotonic: Duration
+    private var _wallClock: Date
+    private(set) var sleepCount = 0
+
+    init(start: Duration = .zero, wallClock: Date = Date(timeIntervalSince1970: 1_756_000_000)) {
+        _monotonic = start
+        _wallClock = wallClock
+    }
+
+    var monotonic: Duration { lock.withLock { _monotonic } }
+    var wallClock: Date { lock.withLock { _wallClock } }
+
+    func sleep(for duration: Duration) async throws {
+        guard duration > .zero else { return }
+        lock.withLock {
+            sleepCount += 1
+            _monotonic += duration
+            _wallClock = _wallClock.addingTimeInterval(duration.seconds)
+        }
+    }
+
+    /// Avance le temps sans passer par une attente, pour piloter un scénario.
+    func advance(by duration: Duration) {
+        lock.withLock {
+            _monotonic += duration
+            _wallClock = _wallClock.addingTimeInterval(duration.seconds)
+        }
+    }
+}
+
+/// Rejoue des réponses enregistrées, indexées par méthode et chemin (R-09).
+///
+/// Passer par le protocole plutôt que par un `URLProtocol` enregistré globalement
+/// garde les tests parallélisables et sans état partagé.
+actor FixtureTransport: HTTPTransport {
+
+    enum Outcome {
+        case response(HTTPResponse)
+        /// Aucune réponse reçue : issue **indéterminée** côté file d'envoi.
+        case failure(Error)
+    }
+
+    struct UnexpectedRequest: Error { let method: String; let path: String }
+
+    private var queued: [String: [Outcome]] = [:]
+    private(set) var recorded: [HTTPRequest] = []
+
+    static func key(_ method: HTTPRequest.Method, _ path: String) -> String {
+        "\(method.rawValue) \(path)"
+    }
+
+    /// Empile une issue pour un couple méthode/chemin. Les issues sont consommées
+    /// dans l'ordre, ce qui permet de scripter « échec puis succès ».
+    func enqueue(_ method: HTTPRequest.Method, _ path: String, _ outcome: Outcome) {
+        queued[FixtureTransport.key(method, path), default: []].append(outcome)
+    }
+
+    func enqueue(_ method: HTTPRequest.Method, _ path: String, status: Int,
+                 headers: [String: String] = [:], json: String = "{}") {
+        enqueue(method, path, .response(HTTPResponse(status: status, headers: headers,
+                                                     body: Data(json.utf8))))
+    }
+
+    func send(_ request: HTTPRequest) async throws -> HTTPResponse {
+        recorded.append(request)
+        let key = FixtureTransport.key(request.method, request.path)
+        guard var outcomes = queued[key], !outcomes.isEmpty else {
+            throw UnexpectedRequest(method: request.method.rawValue, path: request.path)
+        }
+        let outcome = outcomes.removeFirst()
+        queued[key] = outcomes
+        switch outcome {
+        case .response(let response): return response
+        case .failure(let error): throw error
+        }
+    }
+
+    func requestCount(_ method: HTTPRequest.Method, _ path: String) -> Int {
+        recorded.filter { $0.method == method && $0.path == path }.count
+    }
+}
+
+/// Magasin de tokens en mémoire : les tests ne touchent jamais au trousseau.
+actor InMemoryTokenStore: TokenStore {
+    private var access: String?
+    private var refresh: String?
+    private(set) var clearCount = 0
+
+    init(access: String? = nil, refresh: String? = nil) {
+        self.access = access
+        self.refresh = refresh
+    }
+
+    func accessToken() async throws -> String? { access }
+    func refreshToken() async throws -> String? { refresh }
+
+    func store(accessToken: String, refreshToken: String) async throws {
+        access = accessToken
+        refresh = refreshToken
+    }
+
+    func clear() async throws {
+        access = nil
+        refresh = nil
+        clearCount += 1
+    }
+}
+
+/// Délai d'inactivité piloté par le test.
+final class StubInactivityMonitor: InactivityMonitor, @unchecked Sendable {
+    private let lock = NSLock()
+    private var _seconds: TimeInterval
+
+    init(seconds: TimeInterval = 0) { _seconds = seconds }
+
+    func set(seconds: TimeInterval) { lock.withLock { _seconds = seconds } }
+    func secondsSinceLastInput() async -> TimeInterval { lock.withLock { _seconds } }
+}
+
+/// Événements de veille émis à la demande.
+final class StubSleepObserver: SleepObserver, @unchecked Sendable {
+    let events: AsyncStream<PowerEvent>
+    private let continuation: AsyncStream<PowerEvent>.Continuation
+
+    init() {
+        var captured: AsyncStream<PowerEvent>.Continuation!
+        events = AsyncStream { captured = $0 }
+        continuation = captured
+    }
+
+    func emit(_ event: PowerEvent) { continuation.yield(event) }
+    func finish() { continuation.finish() }
+}

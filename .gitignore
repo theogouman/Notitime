@@ -1,0 +1,20 @@
+# Xcode project — généré par XcodeGen depuis project.yml, jamais édité ni commité
+Notitime.xcodeproj/
+xcuserdata/
+*.xcuserstate
+DerivedData/
+build/
+
+# Swift Package Manager
+.build/
+.swiftpm/
+Package.resolved
+
+# Secrets et environnement local du backend
+backend/.env.local
+backend/.vercel/
+backend/node_modules/
+
+# macOS
+.DS_Store
+dist/

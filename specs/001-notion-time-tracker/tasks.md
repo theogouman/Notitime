@@ -28,14 +28,14 @@ Trois racines de code, conformément à la décision de structure de `plan.md` :
 
 **Purpose**: rendre le dépôt constructible et testable en ligne de commande, sans ouvrir Xcode.
 
-- [ ] T001 Créer `project.yml` XcodeGen décrivant la cible app `Notitime` (bundle identifier `com.notitime.app`, macOS 14 minimum, arm64 + x86_64) et sa dépendance au package local
-- [ ] T002 Ajouter `Notitime.xcodeproj/` et `backend/.env.local` à `.gitignore`
-- [ ] T003 [P] Créer `Packages/NotitimeCore/Package.swift` (Swift 5.10, plateforme macOS 14, cible `NotitimeCore` + cible de tests, zéro dépendance externe)
-- [ ] T004 [P] Créer le squelette de la cible app dans `App/NotitimeApp.swift` avec `MenuBarExtra` et aucune fenêtre principale
-- [ ] T005 [P] Créer `App/Resources/Info.plist` déclarant `CFBundleURLTypes` avec le scheme `notitime` et `LSUIElement` à vrai
-- [ ] T006 [P] Créer `scripts/generate.sh`, `scripts/build.sh`, `scripts/test.sh`, `scripts/package.sh` conformément à la boucle décrite dans `quickstart.md`
-- [ ] T007 [P] Initialiser `backend/package.json`, `backend/vercel.json` et `backend/tests/` (Node 20, aucune dépendance à une API propriétaire de la plateforme — condition de l'écart accepté dans `plan.md`)
-- [ ] T008 [P] Créer `App/Resources/Localizable.xcstrings` vide et la convention d'accès aux chaînes, français par défaut (FR-036)
+- [X] T001 Créer `project.yml` XcodeGen décrivant la cible app `Notitime` (bundle identifier `com.notitime.app`, macOS 14 minimum, arm64 + x86_64) et sa dépendance au package local
+- [X] T002 Ajouter `Notitime.xcodeproj/` et `backend/.env.local` à `.gitignore`
+- [X] T003 [P] Créer `Packages/NotitimeCore/Package.swift` (Swift 5.10, plateforme macOS 14, cible `NotitimeCore` + cible de tests, zéro dépendance externe)
+- [X] T004 [P] Créer le squelette de la cible app dans `App/NotitimeApp.swift` avec `MenuBarExtra` et aucune fenêtre principale
+- [X] T005 [P] Créer `App/Resources/Info.plist` déclarant `CFBundleURLTypes` avec le scheme `notitime` et `LSUIElement` à vrai
+- [X] T006 [P] Créer `scripts/generate.sh`, `scripts/build.sh`, `scripts/test.sh`, `scripts/package.sh` conformément à la boucle décrite dans `quickstart.md`
+- [X] T007 [P] Initialiser `backend/package.json`, `backend/vercel.json` et `backend/tests/` (Node 20, aucune dépendance à une API propriétaire de la plateforme — condition de l'écart accepté dans `plan.md`)
+- [X] T008 [P] Créer `App/Resources/Localizable.xcstrings` vide et la convention d'accès aux chaînes, français par défaut (FR-036)
 
 ---
 
@@ -45,20 +45,20 @@ Trois racines de code, conformément à la décision de structure de `plan.md` :
 
 **⚠️ CRITIQUE** : aucune user story ne démarre avant la fin de cette phase.
 
-- [ ] T009 Créer `Packages/NotitimeCore/Sources/NotitimeCore/Notion/NotionAPI.swift` avec la constante unique `Notion-Version = "2026-03-11"` et les chemins d'endpoint de `contracts/notion-api.md` (R-01)
-- [ ] T010 [P] Définir les protocoles `HTTPTransport`, `TokenStore`, `InactivityMonitor`, `SleepObserver` dans `Packages/NotitimeCore/Sources/NotitimeCore/Support/SystemPorts.swift` (contrat `core-api.md`)
-- [ ] T011 [P] Définir l'horloge injectable dans `Packages/NotitimeCore/Sources/NotitimeCore/Support/Clock.swift` (`ContinuousClock` en production, horloge contrôlée en test — R-02)
-- [ ] T012 [P] Implémenter le chargeur de fixtures et le `HTTPTransport` de test dans `Packages/NotitimeCore/Tests/NotitimeCoreTests/Support/FixtureTransport.swift`, indexé par méthode et chemin (R-09)
-- [ ] T013 [P] Implémenter les doublures `InMemoryTokenStore`, `StubInactivityMonitor`, `StubSleepObserver` dans `Packages/NotitimeCore/Tests/NotitimeCoreTests/Support/`
-- [ ] T014 Implémenter l'acteur `RateLimiter` (seau à 3 jetons/seconde, suspension globale sur `Retry-After`) dans `Packages/NotitimeCore/Sources/NotitimeCore/Support/RateLimiter.swift` (FR-029, R-05)
-- [ ] T015 Écrire les tests du limiteur dans `Packages/NotitimeCore/Tests/NotitimeCoreTests/RateLimiterTests.swift` : jamais plus de 3 requêtes par seconde, suspension globale sur `Retry-After`
-- [ ] T016 Créer les modèles SwiftData de `data-model.md` dans `Packages/NotitimeCore/Sources/NotitimeCore/Persistence/Models.swift` (`NotionConnection`, `DatabaseBinding`, `CachedTask`, `CachedProject`, `RecentTaskUse`, `ActiveSession`, `OutboxEntry`, `AppSettings`)
-- [ ] T017 Implémenter la construction du `ModelContainer` (fichier dans Application Support, variante en mémoire pour les tests) dans `Packages/NotitimeCore/Sources/NotitimeCore/Persistence/Store.swift` (R-08)
-- [ ] T018 [P] Implémenter le journal rotatif `SessionLog` (deux fichiers de 2 Mo, acteur dédié, filtrage des valeurs sensibles) dans `Packages/NotitimeCore/Sources/NotitimeCore/Logging/SessionLog.swift` (FR-037, R-13)
-- [ ] T019 [P] Écrire le test d'étanchéité du journal dans `Packages/NotitimeCore/Tests/NotitimeCoreTests/SessionLogTests.swift` : aucun token, code OAuth ni titre de tâche, rotation effective au-delà du plafond
-- [ ] T020 [P] Implémenter `App/System/URLSessionTransport.swift` et `App/System/KeychainTokenStore.swift` (`kSecClassGenericPassword`, `kSecAttrAccessibleAfterFirstUnlock`, service `com.notitime.app` — R-07)
-- [ ] T021 [P] Implémenter la garde d'instance unique via `NSRunningApplication` dans `App/NotitimeApp.swift` (FR-035, R-10)
-- [ ] T022 Définir le type de classement des réponses Notion (transitoire / permanente / `401`) dans `Packages/NotitimeCore/Sources/NotitimeCore/Notion/ResponseClass.swift` selon le tableau de `contracts/notion-api.md` (FR-029)
+- [X] T009 Créer `Packages/NotitimeCore/Sources/NotitimeCore/Notion/NotionAPI.swift` avec la constante unique `Notion-Version = "2026-03-11"` et les chemins d'endpoint de `contracts/notion-api.md` (R-01)
+- [X] T010 [P] Définir les protocoles `HTTPTransport`, `TokenStore`, `InactivityMonitor`, `SleepObserver` dans `Packages/NotitimeCore/Sources/NotitimeCore/Support/SystemPorts.swift` (contrat `core-api.md`)
+- [X] T011 [P] Définir l'horloge injectable dans `Packages/NotitimeCore/Sources/NotitimeCore/Support/Clock.swift` (`ContinuousClock` en production, horloge contrôlée en test — R-02)
+- [X] T012 [P] Implémenter le chargeur de fixtures et le `HTTPTransport` de test dans `Packages/NotitimeCore/Tests/NotitimeCoreTests/Support/FixtureTransport.swift`, indexé par méthode et chemin (R-09)
+- [X] T013 [P] Implémenter les doublures `InMemoryTokenStore`, `StubInactivityMonitor`, `StubSleepObserver` dans `Packages/NotitimeCore/Tests/NotitimeCoreTests/Support/`
+- [X] T014 Implémenter l'acteur `RateLimiter` (seau à 3 jetons/seconde, suspension globale sur `Retry-After`) dans `Packages/NotitimeCore/Sources/NotitimeCore/Support/RateLimiter.swift` (FR-029, R-05)
+- [X] T015 Écrire les tests du limiteur dans `Packages/NotitimeCore/Tests/NotitimeCoreTests/RateLimiterTests.swift` : jamais plus de 3 requêtes par seconde, suspension globale sur `Retry-After`
+- [X] T016 Créer les modèles SwiftData de `data-model.md` dans `Packages/NotitimeCore/Sources/NotitimeCore/Persistence/Models.swift` (`NotionConnection`, `DatabaseBinding`, `CachedTask`, `CachedProject`, `RecentTaskUse`, `ActiveSession`, `OutboxEntry`, `AppSettings`)
+- [X] T017 Implémenter la construction du `ModelContainer` (fichier dans Application Support, variante en mémoire pour les tests) dans `Packages/NotitimeCore/Sources/NotitimeCore/Persistence/Store.swift` (R-08)
+- [X] T018 [P] Implémenter le journal rotatif `SessionLog` (deux fichiers de 2 Mo, acteur dédié, filtrage des valeurs sensibles) dans `Packages/NotitimeCore/Sources/NotitimeCore/Logging/SessionLog.swift` (FR-037, R-13)
+- [X] T019 [P] Écrire le test d'étanchéité du journal dans `Packages/NotitimeCore/Tests/NotitimeCoreTests/SessionLogTests.swift` : aucun token, code OAuth ni titre de tâche, rotation effective au-delà du plafond
+- [X] T020 [P] Implémenter `App/System/URLSessionTransport.swift` et `App/System/KeychainTokenStore.swift` (`kSecClassGenericPassword`, `kSecAttrAccessibleAfterFirstUnlock`, service `com.notitime.app` — R-07)
+- [X] T021 [P] Implémenter la garde d'instance unique via `NSRunningApplication` dans `App/NotitimeApp.swift` (FR-035, R-10)
+- [X] T022 Définir le type de classement des réponses Notion (transitoire / permanente / `401`) dans `Packages/NotitimeCore/Sources/NotitimeCore/Notion/ResponseClass.swift` selon le tableau de `contracts/notion-api.md` (FR-029)
 
 **Checkpoint**: fondations prêtes — les user stories peuvent démarrer.
 

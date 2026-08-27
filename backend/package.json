@@ -1,0 +1,11 @@
+{
+  "name": "notitime-oauth-backend",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Fonctions serverless sans état portant le secret OAuth Notion. Aucune donnée utilisateur stockée ni journalisée.",
+  "type": "module",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "test": "node --test tests/"
+  }
+}

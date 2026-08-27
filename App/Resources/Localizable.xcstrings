@@ -1,0 +1,27 @@
+{
+  "sourceLanguage" : "fr",
+  "strings" : {
+    "menu.idle.title" : {
+      "comment" : "Titre du menu au repos, aucune session en cours",
+      "extractionState" : "manual",
+      "localizations" : {
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Aucune session en cours" } }
+      }
+    },
+    "menu.notConnected" : {
+      "comment" : "État affiché tant que le workspace Notion n'est pas connecté",
+      "extractionState" : "manual",
+      "localizations" : {
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Connecter mon Notion" } }
+      }
+    },
+    "app.alreadyRunning" : {
+      "comment" : "Message de la seconde instance avant qu'elle ne se ferme (FR-035)",
+      "extractionState" : "manual",
+      "localizations" : {
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Notitime est déjà lancé et se trouve dans la barre de menus." } }
+      }
+    }
+  },
+  "version" : "1.0"
+}

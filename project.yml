@@ -1,0 +1,70 @@
+# Description du projet Xcode. Le .xcodeproj est GÉNÉRÉ depuis ce fichier par
+# `scripts/generate.sh` et n'est ni édité à la main ni commité (principe VI).
+name: Notitime
+
+options:
+  bundleIdPrefix: com.notitime
+  deploymentTarget:
+    macOS: "14.0"
+  createIntermediateGroups: true
+
+settings:
+  base:
+    SWIFT_VERSION: "5.10"
+    # Binaire universel : Apple Silicon et Intel (contraintes techniques).
+    # L'universel est réservé au Release : en Debug, forcer les deux tranches
+    # oblige à recompiler NotitimeCore pour une architecture qui n'est pas celle
+    # de la machine, ce qui casse la résolution du module.
+    ARCHS: "arm64 x86_64"
+    # Le build ne doit produire aucun warning Swift : on les rend visibles.
+    SWIFT_TREAT_WARNINGS_AS_ERRORS: NO
+    GCC_TREAT_WARNINGS_AS_ERRORS: NO
+    # v1 non signée, distribuée en interne. Entitlements minimaux, sandbox non
+    # contournée : rien ici ne doit compliquer une notarisation ultérieure.
+    CODE_SIGN_IDENTITY: ""
+    CODE_SIGNING_REQUIRED: NO
+    CODE_SIGNING_ALLOWED: NO
+  configs:
+    Debug:
+      ONLY_ACTIVE_ARCH: YES
+    Release:
+      ONLY_ACTIVE_ARCH: NO
+
+packages:
+  NotitimeCore:
+    path: Packages/NotitimeCore
+
+targets:
+  Notitime:
+    type: application
+    platform: macOS
+    sources:
+      - path: App
+    dependencies:
+      - package: NotitimeCore
+        product: NotitimeCore
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.notitime.app
+        PRODUCT_NAME: Notitime
+        INFOPLIST_FILE: App/Resources/Info.plist
+        GENERATE_INFOPLIST_FILE: NO
+        ENABLE_HARDENED_RUNTIME: YES
+        # Pas de sandbox en v1 : la sandbox n'est pas contournée, elle n'est
+        # simplement pas activée tant que la distribution reste manuelle.
+        ENABLE_APP_SANDBOX: NO
+
+schemes:
+  Notitime:
+    build:
+      targets:
+        Notitime: all
+    run:
+      config: Debug
+    test:
+      config: Debug
+      # Aucune cible de tests applicative : la constitution n'impose pas de tests
+      # SwiftUI (principe VII), et toute la logique testable vit dans
+      # NotitimeCore, couverte par `swift test`. Le schéma sert à construire et
+      # à lancer l'app, pas à tester.
+      targets: []
