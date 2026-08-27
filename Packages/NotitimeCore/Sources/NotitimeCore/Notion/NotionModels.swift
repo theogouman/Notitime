@@ -108,6 +108,21 @@ public struct NotionPropertySchema: Codable, Sendable {
     }
 }
 
+/// Un modèle de page déclaré sur une source de données.
+public struct NotionTemplate: Decodable, Sendable, Equatable {
+    public let id: String
+    public let name: String
+    public let isDefault: Bool
+
+    private enum CodingKeys: String, CodingKey { case id, name, isDefault = "is_default" }
+
+    public init(id: String, name: String, isDefault: Bool) {
+        self.id = id
+        self.name = name
+        self.isDefault = isDefault
+    }
+}
+
 /// Une source de données : porte le schéma, s'interroge, reçoit les pages.
 public struct NotionDataSource: Sendable {
     public let id: String

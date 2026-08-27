@@ -128,7 +128,7 @@ final class OnboardingModel: ObservableObject {
                 result = try await discovery.discoverFromAccessibleSources()
             }
             outcome = result
-            persist(result)
+            await persist(result)
             await logOutcome(result)
 
             guard !result.isEmpty else {
@@ -192,6 +192,12 @@ final class OnboardingModel: ObservableObject {
                 if case .missing(let missing, _, _) = validation {
                     missingByRole[role] = missing
                     broken.append(role)
+                } else {
+                    // La revalidation est aussi ce qui rattrape une liaison
+                    // enregistrée avant que le modèle de page ne soit constaté.
+                    binding.usesDefaultTemplate = await detectsDefaultTemplate(
+                        for: role, dataSourceID: binding.dataSourceID)
+                    try? context.save()
                 }
             } catch {
                 // Source disparue : le rôle redevient à désigner.
@@ -239,8 +245,10 @@ final class OnboardingModel: ObservableObject {
             switch validation {
             case .valid(let map):
                 missingByRole[role] = nil
+                let template = await detectsDefaultTemplate(for: role, dataSourceID: dataSourceID)
                 save(role: role, source: source, name: name,
-                     databaseID: databaseID ?? source.databaseID, map: map)
+                     databaseID: databaseID ?? source.databaseID, map: map,
+                     usesDefaultTemplate: template)
                 await environment.log.log(.sync, "assignation réussie rôle=\(role.rawValue) "
                                           + "propriétés=\(map.count) liés=\(boundRoles.count)")
                 // Un rôle lié ne signifie pas la configuration terminée : lier
@@ -330,6 +338,7 @@ final class OnboardingModel: ObservableObject {
             workspaceID: authorization.workspaceID,
             workspaceName: authorization.workspaceName ?? "",
             workspaceIconURL: authorization.workspaceIcon.flatMap(URL.init(string:)),
+            workspaceIconRaw: authorization.workspaceIcon,
             botID: authorization.botID,
             ownerUserID: authorization.owner?.user?.id ?? "",
             ownerName: authorization.owner?.user?.name ?? "",
@@ -340,27 +349,53 @@ final class OnboardingModel: ObservableObject {
         try? context.save()
     }
 
-    private func persist(_ result: DiscoveryOutcome) {
+    private func persist(_ result: DiscoveryOutcome) async {
         defer { reloadBindings() }
         for (role, candidate) in result.assigned {
+            let template = await detectsDefaultTemplate(for: role,
+                                                        dataSourceID: candidate.dataSourceID)
             save(role: role,
                  dataSourceID: candidate.dataSourceID,
                  dataSourceName: candidate.dataSourceName,
                  databaseID: candidate.databaseID ?? "",
                  title: candidate.databaseTitle,
-                 map: candidate.validation.propertyMap)
+                 map: candidate.validation.propertyMap,
+                 usesDefaultTemplate: template)
         }
     }
 
     private func save(role: DatabaseRole, source: NotionDataSource, name: String,
-                      databaseID: String?, map: [PropertyKey: PropertyRef]) {
+                      databaseID: String?, map: [PropertyKey: PropertyRef],
+                      usesDefaultTemplate: Bool = false) {
         save(role: role, dataSourceID: source.id,
              dataSourceName: name.isEmpty ? source.title : name,
-             databaseID: databaseID ?? "", title: source.title, map: map)
+             databaseID: databaseID ?? "", title: source.title, map: map,
+             usesDefaultTemplate: usesDefaultTemplate)
+    }
+
+    /// Les entrées de temps naissent du modèle de page de la base, s'il en existe
+    /// un par défaut. On le constate une fois, à la liaison : c'est une propriété
+    /// de la base, et l'interroger à chaque envoi coûterait le quota pour rien.
+    ///
+    /// Un échec n'empêche pas de lier : sans modèle, les pages seront simplement
+    /// nues, ce qui reste préférable à une configuration bloquée.
+    private func detectsDefaultTemplate(for role: DatabaseRole, dataSourceID: String) async -> Bool {
+        guard role == .timeEntries else { return false }
+        do {
+            let has = try await environment.notion.hasDefaultTemplate(dataSourceID: dataSourceID)
+            await environment.log.log(.sync, "modèle de page par défaut=\(has ? "oui" : "non") "
+                                      + "source=\(dataSourceID)")
+            return has
+        } catch {
+            await environment.log.log(.sync, "modèles de page illisibles : \(error) — "
+                                      + "les entrées seront créées sans modèle")
+            return false
+        }
     }
 
     private func save(role: DatabaseRole, dataSourceID: String, dataSourceName: String,
-                      databaseID: String, title: String, map: [PropertyKey: PropertyRef]) {
+                      databaseID: String, title: String, map: [PropertyKey: PropertyRef],
+                      usesDefaultTemplate: Bool = false) {
         let context = environment.container.mainContext
         let raw = role.rawValue
         let existing = try? context.fetch(
@@ -373,7 +408,8 @@ final class OnboardingModel: ObservableObject {
                                       title: title,
                                       propertyMap: Dictionary(uniqueKeysWithValues:
                                         map.map { ($0.key.rawValue, $0.value) }),
-                                      lastValidatedAt: Date(), validationState: "valid")
+                                      lastValidatedAt: Date(), validationState: "valid",
+                                      usesDefaultTemplate: usesDefaultTemplate)
         context.insert(binding)
         try? context.save()
         reloadBindings()

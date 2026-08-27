@@ -12,8 +12,10 @@ import SwiftData
 // Stockées en `String` brute avec un accesseur typé : c'est plus verbeux qu'un enum
 // natif, mais ça survit à un renommage de cas sans migration de magasin.
 
-public enum DatabaseRole: String, Codable, Sendable, CaseIterable {
+public enum DatabaseRole: String, Codable, Sendable, CaseIterable, Identifiable {
     case tasks, timeEntries, projects
+
+    public var id: String { rawValue }
 }
 
 public enum SessionMode: String, Codable, Sendable {
@@ -72,6 +74,8 @@ public final class NotionConnection {
     @Attribute(.unique) public var workspaceID: String
     public var workspaceName: String
     public var workspaceIconURL: URL?
+    /// Valeur brute de `workspace_icon` : emoji ou adresse, indifféremment.
+    public var workspaceIconRaw: String?
     public var botID: String
     /// Identifie l'utilisateur courant : filtre Personne et remplissage de la
     /// propriété Personne des entrées (FR-011, FR-026).
@@ -81,12 +85,19 @@ public final class NotionConnection {
     public var duplicatedTemplateID: String?
     public var connectedAt: Date
 
+    /// Icône telle qu'elle doit être affichée, quelle que soit sa forme.
+    public var icon: WorkspaceIcon {
+        WorkspaceIcon.parse(workspaceIconRaw ?? workspaceIconURL?.absoluteString)
+    }
+
     public init(workspaceID: String, workspaceName: String, workspaceIconURL: URL? = nil,
+                workspaceIconRaw: String? = nil,
                 botID: String, ownerUserID: String, ownerName: String,
                 duplicatedTemplateID: String? = nil, connectedAt: Date) {
         self.workspaceID = workspaceID
         self.workspaceName = workspaceName
         self.workspaceIconURL = workspaceIconURL
+        self.workspaceIconRaw = workspaceIconRaw
         self.botID = botID
         self.ownerUserID = ownerUserID
         self.ownerName = ownerName
@@ -109,6 +120,12 @@ public final class DatabaseBinding {
     public var title: String
     /// Mapping clé logique → propriété réelle, sérialisé (voir `PropertyRef`).
     public var propertyMapData: Data
+    /// La source déclare un modèle de page par défaut.
+    ///
+    /// Constaté à la liaison plutôt qu'à chaque envoi : c'est une propriété de la
+    /// base, qui ne change pas d'une session à l'autre, et une requête de plus
+    /// par entrée coûterait le quota pour rien.
+    public var usesDefaultTemplate: Bool = false
     public var lastValidatedAt: Date?
     public var validationStateRaw: String
 
@@ -120,7 +137,8 @@ public final class DatabaseBinding {
     public init(role: DatabaseRole, databaseID: String, dataSourceID: String,
                 dataSourceName: String, title: String,
                 propertyMap: [String: PropertyRef] = [:],
-                lastValidatedAt: Date? = nil, validationState: String = "unvalidated") {
+                lastValidatedAt: Date? = nil, validationState: String = "unvalidated",
+                usesDefaultTemplate: Bool = false) {
         self.roleRaw = role.rawValue
         self.databaseID = databaseID
         self.dataSourceID = dataSourceID
@@ -129,6 +147,7 @@ public final class DatabaseBinding {
         self.propertyMapData = (try? JSONEncoder().encode(propertyMap)) ?? Data()
         self.lastValidatedAt = lastValidatedAt
         self.validationStateRaw = validationState
+        self.usesDefaultTemplate = usesDefaultTemplate
     }
 
     public var propertyMap: [String: PropertyRef] {

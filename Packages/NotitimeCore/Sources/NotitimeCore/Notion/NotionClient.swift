@@ -49,6 +49,28 @@ public actor NotionClient {
         return results
     }
 
+    /// Modèles de page déclarés par une source, pagination suivie.
+    public func dataSourceTemplates(id: String) async throws -> [NotionTemplate] {
+        var results: [NotionTemplate] = []
+        var cursor: String?
+        repeat {
+            var path = NotionAPI.Path.dataSourceTemplates(id) + "?page_size=100"
+            if let cursor { path += "&start_cursor=\(cursor)" }
+            let page: NotionList<NotionTemplate> = try await get(path)
+            results.append(contentsOf: page.results)
+            cursor = page.hasMore ? page.nextCursor : nil
+        } while cursor != nil
+        return results
+    }
+
+    /// La source déclare-t-elle un modèle par défaut ?
+    ///
+    /// `template[type]=default` n'est accepté que dans ce cas : le demander
+    /// ailleurs fait refuser la création, et l'entrée resterait en file.
+    public func hasDefaultTemplate(dataSourceID: String) async throws -> Bool {
+        try await dataSourceTemplates(id: dataSourceID).contains(where: \.isDefault)
+    }
+
     /// Profondeur maximale de la descente dans l'arborescence de blocs.
     ///
     /// Un template range volontiers ses bases dans des colonnes, elles-mêmes dans

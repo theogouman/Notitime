@@ -456,6 +456,7 @@ final class SessionController: ObservableObject {
         let composer = EntryComposer(mapper: mapper,
                                      dataSourceID: binding.dataSourceID,
                                      personUserID: connection.ownerUserID,
+                                     usesDefaultTemplate: binding.usesDefaultTemplate,
                                      taskTitleLookup: { titles[$0] })
         // Une entrée écrite sans statut doit être explicable : c'est que les
         // options de la base ne savent pas exprimer ce résultat.

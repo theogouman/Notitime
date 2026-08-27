@@ -41,13 +41,17 @@ public struct EntryComposer: Sendable {
     private let mapper: PropertyMapper
     public let dataSourceID: String
     private let personUserID: String
+    /// La source déclare un modèle de page par défaut, à appliquer aux entrées.
+    private let usesDefaultTemplate: Bool
     private let taskTitleLookup: @Sendable (String) -> String?
 
     public init(mapper: PropertyMapper, dataSourceID: String, personUserID: String,
+                usesDefaultTemplate: Bool = false,
                 taskTitleLookup: @escaping @Sendable (String) -> String?) {
         self.mapper = mapper
         self.dataSourceID = dataSourceID
         self.personUserID = personUserID
+        self.usesDefaultTemplate = usesDefaultTemplate
         self.taskTitleLookup = taskTitleLookup
     }
 
@@ -137,7 +141,13 @@ public struct EntryComposer: Sendable {
         }
         put(mapper.richTextValue(.entryLocalID, entry.localID.uuidString))
 
-        return ["parent": ["data_source_id": dataSourceID], "properties": properties]
+        var body: [String: Any] = ["parent": ["data_source_id": dataSourceID],
+                                   "properties": properties]
+        // Le modèle de la base fournit le contenu de la page ; l'API l'applique
+        // de façon asynchrone après la réponse, et refuse `children` en même
+        // temps — nous n'en envoyons aucun.
+        if usesDefaultTemplate { body["template"] = ["type": "default"] }
+        return body
     }
 
     static func canonicalMethod(_ mode: SessionMode) -> String {

@@ -24,11 +24,19 @@ Comportements visibles par l'utilisateur, dans l'ordre des livraisons.
 ### Présentation
 
 - Icône d'application, dans le Dock, le Finder et la fenêtre « À propos ».
+- Icône de la barre de menus recadrée sur la silhouette et portée à 20 pt : elle
+  n'occupait auparavant que les trois quarts de sa hauteur, et paraissait petite.
 - Icône dédiée dans la barre de menus, rendue en gabarit : elle se teinte avec
   le thème clair ou sombre et s'inverse quand le menu est ouvert.
 - Pendant une session, l'icône reste affichée et le temps la suit — compte à
   rebours en Pomodoro, temps écoulé en suivi libre, chiffres à chasse fixe pour
   que rien ne se déplace de seconde en seconde.
+
+### Réglages
+
+- Section « Connexion » remaniée : le nom du workspace en titre, son icône —
+  emoji comme image —, la date de connexion, et les bases liées présentées en
+  tableau, chacune modifiable depuis sa ligne.
 
 ### Sessions (US2, US4)
 
@@ -52,6 +60,10 @@ Comportements visibles par l'utilisateur, dans l'ordre des livraisons.
   indiquant pour chacun s'il est traité ou seulement constaté.
 
 ### Entrées de temps (US2, US6)
+
+- Les entrées naissent du **modèle de page par défaut** de la base Time Tracker,
+  quand elle en déclare un : la page créée porte le contenu prévu par le modèle,
+  et plus seulement ses propriétés.
 
 - La méthode et le statut écrits dans Time Tracker sont projetés sur les options
   réelles de la base : « Time Tracker » plutôt qu'une option « Tracker » créée

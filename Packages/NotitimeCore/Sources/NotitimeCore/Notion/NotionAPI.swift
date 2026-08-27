@@ -41,6 +41,12 @@ public enum NotionAPI {
             "/v1/data_sources/\(dataSourceID)/query"
         }
 
+        /// Modèles de page d'une source. C'est `is_default` qui désigne celui
+        /// qu'applique `template[type]=default` à la création.
+        public static func dataSourceTemplates(_ dataSourceID: String) -> String {
+            "/v1/data_sources/\(dataSourceID)/templates"
+        }
+
         /// Blocs enfants d'une page — découverte des `child_database` du template.
         public static func blockChildren(_ blockID: String) -> String {
             "/v1/blocks/\(blockID)/children"

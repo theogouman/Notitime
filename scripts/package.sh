@@ -28,5 +28,18 @@ echo "== Signature ad-hoc =="
 codesign --force --deep --sign - dist/Notitime.app
 codesign --verify --verbose=1 dist/Notitime.app 2>&1 | sed 's/^/  /'
 
+# L'icône qu'affiche le centre de notifications est celle du bundle enregistré
+# auprès de LaunchServices pour `com.notitime.app`. Plusieurs copies coexistent
+# — DerivedData, build/, dist/ — et le système peut retenir celle d'un build
+# antérieur, dépourvu d'icône. On enregistre donc explicitement celle qu'on
+# distribue. Sans effet sur la signature ni sur le contenu du bundle.
+echo "== Enregistrement auprès de LaunchServices =="
+LSREGISTER="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
+if [ -x "$LSREGISTER" ]; then
+  "$LSREGISTER" -f dist/Notitime.app && echo "  icône et identité à jour pour com.notitime.app"
+else
+  echo "  lsregister introuvable — icône de notification possiblement périmée" >&2
+fi
+
 echo "Bundle produit : dist/Notitime.app"
 lipo -archs dist/Notitime.app/Contents/MacOS/Notitime
