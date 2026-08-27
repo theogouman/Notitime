@@ -91,6 +91,19 @@ public struct PropertyMapper: Sendable {
         return (name, ["select": ["name": option]])
     }
 
+    /// Écrit une valeur dans le conteneur qu'attend le **type réel** de la
+    /// propriété.
+    ///
+    /// Un `status` et un `select` se ressemblent à la lecture mais pas à
+    /// l'écriture : envoyer `{"select": …}` sur une propriété `status` produit
+    /// un `400` de validation. Le template diffusé porte précisément un statut
+    /// de type `status`, là où la documentation prévoyait un `select`.
+    public func selectOrStatusValue(_ key: PropertyKey, _ option: String) -> (String, [String: Any])? {
+        guard let reference = map[key] else { return nil }
+        let container = reference.type == "status" ? "status" : "select"
+        return (reference.name, [container: ["name": option]])
+    }
+
     public func dateValue(_ key: PropertyKey, _ date: Date) -> (String, [String: Any])? {
         guard let name = name(key) else { return nil }
         return (name, ["date": ["start": PropertyMapper.iso8601.string(from: date)]])

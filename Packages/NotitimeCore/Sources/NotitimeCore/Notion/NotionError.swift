@@ -7,13 +7,21 @@ public struct NotionError: Error, Equatable {
     public let status: Int?
     public let code: String?
     public let message: String?
+    /// Vrai quand Notion a répondu, fût-ce une erreur.
+    ///
+    /// Un `503` et une coupure de connexion sont tous deux transitoires, mais
+    /// ils ne se réessaient pas de la même façon : le premier prouve qu'aucune
+    /// page n'a été créée, le second ne prouve rien. Sans cette distinction, un
+    /// réessai après coupure recréerait une page déjà existante (FR-028, R-06).
+    public let hadResponse: Bool
 
     public init(responseClass: ResponseClass, status: Int? = nil,
-                code: String? = nil, message: String? = nil) {
+                code: String? = nil, message: String? = nil, hadResponse: Bool = true) {
         self.responseClass = responseClass
         self.status = status
         self.code = code
         self.message = message
+        self.hadResponse = hadResponse
     }
 
     /// Vrai quand la réponse prouve qu'aucune page n'a été créée (FR-028, R-06).

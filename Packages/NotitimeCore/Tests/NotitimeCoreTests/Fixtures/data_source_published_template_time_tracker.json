@@ -1,17 +1,86 @@
 {
   "object": "data_source",
   "id": "ds-tpl-time-tracker",
-  "title": [{ "plain_text": "Time Tracker" }],
-  "parent": { "type": "database_id", "database_id": "db-tpl-time-tracker" },
+  "title": [
+    {
+      "plain_text": "Time Tracker"
+    }
+  ],
+  "parent": {
+    "type": "database_id",
+    "database_id": "db-tpl-time-tracker"
+  },
   "properties": {
-    "Name":          { "id": "title",  "name": "Name",          "type": "title" },
-    "Tâches":        { "id": "p-task", "name": "Tâches",        "type": "relation" },
-    "Date de début": { "id": "p-str",  "name": "Date de début", "type": "date" },
-    "Date de fin":   { "id": "p-end",  "name": "Date de fin",   "type": "date" },
-    "Durée en min":  { "id": "p-dur",  "name": "Durée en min",  "type": "number" },
-    "Méthode":       { "id": "p-met",  "name": "Méthode",       "type": "select" },
-    "Status":        { "id": "p-sta",  "name": "Status",        "type": "status" },
-    "Responsable":   { "id": "p-per",  "name": "Responsable",   "type": "people" },
-    "ID":            { "id": "p-lid",  "name": "ID",            "type": "rich_text" }
+    "Name": {
+      "id": "title",
+      "name": "Name",
+      "type": "title"
+    },
+    "Tâches": {
+      "id": "p-task",
+      "name": "Tâches",
+      "type": "relation"
+    },
+    "Date de début": {
+      "id": "p-str",
+      "name": "Date de début",
+      "type": "date"
+    },
+    "Date de fin": {
+      "id": "p-end",
+      "name": "Date de fin",
+      "type": "date"
+    },
+    "Durée en min": {
+      "id": "p-dur",
+      "name": "Durée en min",
+      "type": "number"
+    },
+    "Méthode": {
+      "id": "p-met",
+      "name": "Méthode",
+      "type": "select",
+      "select": {
+        "options": [
+          {
+            "name": "Time Tracker"
+          },
+          {
+            "name": "Pomodoro"
+          }
+        ]
+      }
+    },
+    "Status": {
+      "id": "p-sta",
+      "name": "Status",
+      "type": "status",
+      "status": {
+        "options": [
+          {
+            "name": "À lancer"
+          },
+          {
+            "name": "En cours"
+          },
+          {
+            "name": "Terminée"
+          },
+          {
+            "name": "Interrompue"
+          }
+        ]
+      }
+    },
+    "Responsable": {
+      "id": "p-per",
+      "name": "Responsable",
+      "type": "people"
+    },
+    "ID": {
+      "id": "p-lid",
+      "name": "ID",
+      "type": "rich_text"
+    }
   }
 }

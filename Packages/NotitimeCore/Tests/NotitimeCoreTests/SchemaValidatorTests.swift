@@ -183,3 +183,22 @@ final class PublishedTemplateSchemaTests: XCTestCase {
         }
     }
 }
+
+/// Les options d'un `status` ou d'un `select` doivent remonter jusqu'au mapping :
+/// l'API Notion n'accepte pour un `status` que ses options existantes, et sans
+/// elles l'écriture du statut échouerait en 400.
+final class StatusOptionsTests: XCTestCase {
+
+    func testStatusOptionsAreCapturedFromTheSchema() throws {
+        let source = try Fixture.decode(NotionDataSource.self,
+                                        "data_source_published_template_time_tracker")
+
+        guard case .valid(let map) = SchemaValidator().validate(source, as: .timeEntries) else {
+            return XCTFail("le template publié doit valider")
+        }
+
+        XCTAssertEqual(map[.entryStatus]?.options,
+                       ["À lancer", "En cours", "Terminée", "Interrompue"])
+        XCTAssertEqual(map[.entryType]?.options, ["Time Tracker", "Pomodoro"])
+    }
+}

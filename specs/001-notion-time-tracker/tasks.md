@@ -110,24 +110,24 @@ Trois racines de code, conformément à la décision de structure de `plan.md` :
 
 ### Tests for User Story 2 ⚠️
 
-- [ ] T045 [P] [US2] Écrire les tests de la machine à états Pomodoro dans `Packages/NotitimeCore/Tests/NotitimeCoreTests/PomodoroMachineTests.swift` : arrivée à zéro ⇒ « Complété » de la durée cible ; une seule session active à la fois ; démarrage refusé sans tâche (US2.2, US2.5, US2.6, FR-015, FR-017)
-- [ ] T046 [P] [US2] Écrire le test de la règle des 60 secondes dans `PomodoroMachineTests.swift` : aucune entrée produite en deçà (FR-023)
-- [ ] T047 [P] [US2] Écrire les tests de la série et des pauses dans `PomodoroMachineTests.swift` : pause longue au N-ième pomodoro allé à son terme, aucune entrée pour une pause (US2.3, US2.4, FR-020)
-- [ ] T048 [P] [US2] Écrire les tests de composition d'une entrée dans `Packages/NotitimeCore/Tests/NotitimeCoreTests/OutboxCompositionTests.swift` : les neuf propriétés de FR-026, `parent.data_source_id`, relation ne portant que `data_source_id`, titre généré au format de `data-model.md` §3
-- [ ] T049 [P] [US2] Écrire le test de persistance à chaque transition dans `PomodoroMachineTests.swift` : `ActiveSession` réécrite avant tout retour de contrôle (FR-022)
+- [X] T045 [P] [US2] Écrire les tests de la machine à états Pomodoro dans `Packages/NotitimeCore/Tests/NotitimeCoreTests/PomodoroMachineTests.swift` : arrivée à zéro ⇒ « Complété » de la durée cible ; une seule session active à la fois ; démarrage refusé sans tâche (US2.2, US2.5, US2.6, FR-015, FR-017)
+- [X] T046 [P] [US2] Écrire le test de la règle des 60 secondes dans `PomodoroMachineTests.swift` : aucune entrée produite en deçà (FR-023)
+- [X] T047 [P] [US2] Écrire les tests de la série et des pauses dans `PomodoroMachineTests.swift` : pause longue au N-ième pomodoro allé à son terme, aucune entrée pour une pause (US2.3, US2.4, FR-020)
+- [X] T048 [P] [US2] Écrire les tests de composition d'une entrée dans `Packages/NotitimeCore/Tests/NotitimeCoreTests/OutboxCompositionTests.swift` : les neuf propriétés de FR-026, `parent.data_source_id`, relation ne portant que `data_source_id`, titre généré au format de `data-model.md` §3
+- [X] T049 [P] [US2] Écrire le test de persistance à chaque transition dans `PomodoroMachineTests.swift` : `ActiveSession` réécrite avant tout retour de contrôle (FR-022)
 
 ### Implementation for User Story 2
 
-- [ ] T050 [US2] Implémenter `SessionMachine` — états, événements nommés, horloge injectée, persistance à chaque transition — dans `Packages/NotitimeCore/Sources/NotitimeCore/Session/SessionMachine.swift` (FR-016 à FR-022)
-- [ ] T051 [US2] Implémenter le mode Pomodoro — compte à rebours, arrivée à terme, écourtement, série consécutive, absence de pause manuelle — dans `Packages/NotitimeCore/Sources/NotitimeCore/Session/PomodoroMode.swift` (FR-018, FR-019, FR-020)
-- [ ] T052 [US2] Implémenter la composition d'une `OutboxEntry` à partir d'une session éligible dans `Packages/NotitimeCore/Sources/NotitimeCore/Outbox/EntryComposer.swift` (FR-023, FR-026)
-- [ ] T053 [US2] Implémenter l'envoi d'une entrée — `POST /v1/pages` avec `parent.data_source_id`, retrait de la file sur confirmation seulement — dans `Packages/NotitimeCore/Sources/NotitimeCore/Outbox/Outbox.swift` (FR-027)
-- [ ] T054 [US2] Implémenter la publication du commentaire après création réussie, en best-effort, dans `Outbox.swift` : jamais de remise en file, `403` de capacité absente traité comme abandon du seul commentaire (FR-026a)
-- [ ] T055 [US2] Implémenter le chargement minimal des tâches — interrogation de la source liée au rôle Tâches, sans filtre Personne ni recherche, pagination simple — dans `Packages/NotitimeCore/Sources/NotitimeCore/Notion/TaskFetch.swift` (remplacé par `TaskCache` en US3)
-- [ ] T056 [US2] Implémenter la liste brute de sélection de tâche dans le menu — ni recherche, ni section « Récentes », ni filtre — dans `App/MenuBar/BasicTaskPicker.swift` (FR-015 ; remplacée par la liste confortable de l'US3)
-- [ ] T057 [US2] Implémenter l'affichage du compte à rebours et du nom court de la tâche dans la barre de menus dans `App/MenuBar/` (FR-025)
-- [ ] T058 [US2] Implémenter les notifications et le son de fin de pomodoro et de pause dans `App/System/NotificationPresenter.swift` (FR-032)
-- [ ] T059 [US2] Implémenter la proposition de pause après un pomodoro allé à son terme, et l'interruption de pause pour repartir immédiatement, dans `App/MenuBar/` (US2.2, cas limite pause longue)
+- [X] T050 [US2] Implémenter `SessionMachine` — états, événements nommés, horloge injectée, persistance à chaque transition — dans `Packages/NotitimeCore/Sources/NotitimeCore/Session/SessionMachine.swift` (FR-016 à FR-022)
+- [X] T051 [US2] Implémenter le mode Pomodoro — compte à rebours, arrivée à terme, écourtement, série consécutive, absence de pause manuelle — dans `Packages/NotitimeCore/Sources/NotitimeCore/Session/PomodoroMode.swift` (FR-018, FR-019, FR-020)
+- [X] T052 [US2] Implémenter la composition d'une `OutboxEntry` à partir d'une session éligible dans `Packages/NotitimeCore/Sources/NotitimeCore/Outbox/EntryComposer.swift` (FR-023, FR-026)
+- [X] T053 [US2] Implémenter l'envoi d'une entrée — `POST /v1/pages` avec `parent.data_source_id`, retrait de la file sur confirmation seulement — dans `Packages/NotitimeCore/Sources/NotitimeCore/Outbox/Outbox.swift` (FR-027)
+- [X] T054 [US2] Implémenter la publication du commentaire après création réussie, en best-effort, dans `Outbox.swift` : jamais de remise en file, `403` de capacité absente traité comme abandon du seul commentaire (FR-026a)
+- [X] T055 [US2] Implémenter le chargement minimal des tâches — interrogation de la source liée au rôle Tâches, sans filtre Personne ni recherche, pagination simple — dans `Packages/NotitimeCore/Sources/NotitimeCore/Notion/TaskFetch.swift` (remplacé par `TaskCache` en US3)
+- [X] T056 [US2] Implémenter la liste brute de sélection de tâche dans le menu — ni recherche, ni section « Récentes », ni filtre — dans `App/MenuBar/BasicTaskPicker.swift` (FR-015 ; remplacée par la liste confortable de l'US3)
+- [X] T057 [US2] Implémenter l'affichage du compte à rebours et du nom court de la tâche dans la barre de menus dans `App/MenuBar/` (FR-025)
+- [X] T058 [US2] Implémenter les notifications et le son de fin de pomodoro et de pause dans `App/System/NotificationPresenter.swift` (FR-032)
+- [X] T059 [US2] Implémenter la proposition de pause après un pomodoro allé à son terme, et l'interruption de pause pour repartir immédiatement, dans `App/MenuBar/` (US2.2, cas limite pause longue)
 
 **Checkpoint**: MVP démontrable de bout en bout — ouvrir le menu, choisir une tâche dans la liste brute, lancer un pomodoro, voir l'entrée arriver dans Notion. Les validations manuelles 1 à 4 de `quickstart.md` sont exécutables à ce stade.
 

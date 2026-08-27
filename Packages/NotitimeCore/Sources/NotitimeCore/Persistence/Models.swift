@@ -143,11 +143,18 @@ public struct PropertyRef: Codable, Hashable, Sendable {
     public var id: String
     public var name: String
     public var type: String
+    /// Options d'un `select` ou d'un `status`, dans l'ordre du schéma.
+    ///
+    /// Indispensables pour un `status` : l'API n'en crée aucune à la volée, et
+    /// n'accepte que les valeurs déjà déclarées. Les conserver ici évite de
+    /// relire la source à chaque envoi.
+    public var options: [String]
 
-    public init(id: String, name: String, type: String) {
+    public init(id: String, name: String, type: String, options: [String] = []) {
         self.id = id
         self.name = name
         self.type = type
+        self.options = options
     }
 }
 

@@ -102,7 +102,38 @@ public actor NotionClient {
         }
     }
 
+    /// Interroge une source de données. Le corps porte filtres, tri et curseur —
+    /// les filtres sont poussés côté API pour ne pas rapatrier toute la base.
+    public func queryDataSource(_ dataSourceID: String,
+                                body: [String: Any]) async throws -> NotionList<NotionPage> {
+        let page: NotionList<NotionPage> = try await post(NotionAPI.Path.queryDataSource(dataSourceID),
+                                                          body: body)
+        // Une page en corbeille reste renvoyée par l'API : la filtrer ici évite
+        // de la proposer au choix, puis d'y rattacher une entrée de temps.
+        return NotionList(results: page.results.filter { !$0.inTrash },
+                          hasMore: page.hasMore, nextCursor: page.nextCursor)
+    }
+
     // MARK: - Écriture
+
+    /// Crée une page dans une source et rend son identifiant.
+    ///
+    /// L'identifiant rendu est ce qui prouve la création : sans lui, l'entrée ne
+    /// peut pas sortir de la file (FR-027).
+    public func createPage(_ body: [String: Any]) async throws -> String {
+        let created: NotionCreatedPage = try await request(.post, NotionAPI.Path.pages, body: body)
+        return created.id
+    }
+
+    /// Publie un commentaire sur une page. Best-effort côté appelant (FR-026a),
+    /// mais soumis au limiteur comme toute autre requête.
+    public func createComment(pageID: String, text: String) async throws {
+        let body: [String: Any] = [
+            "parent": ["page_id": pageID],
+            "rich_text": [["text": ["content": text]]]
+        ]
+        let _: NotionCreatedComment = try await request(.post, NotionAPI.Path.comments, body: body)
+    }
 
     /// Ajoute des propriétés manquantes à une source. Appelé uniquement sur
     /// acceptation explicite de l'utilisateur, jamais automatiquement (FR-006).
@@ -151,7 +182,7 @@ public actor NotionClient {
             // Aucune réponse : transitoire, et l'issue reste indéterminée pour
             // l'appelant — c'est ce qui imposera la vérification d'idempotence.
             throw NotionError(responseClass: ResponseClassifier.classify(transportError: error),
-                              message: String(describing: error))
+                              message: String(describing: error), hadResponse: false)
         }
 
         let classification = ResponseClassifier.classify(status: response.status,

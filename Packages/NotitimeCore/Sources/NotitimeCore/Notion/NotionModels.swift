@@ -22,9 +22,50 @@ public struct NotionPropertySchema: Codable, Sendable {
     public let id: String
     public let name: String
     public let type: NotionPropertyType
+    /// Options déclarées, pour un `select` ou un `status`.
+    public let options: [String]
 
     public var reference: PropertyRef {
-        PropertyRef(id: id, name: name, type: type.rawValue)
+        PropertyRef(id: id, name: name, type: type.rawValue, options: options)
+    }
+
+    public init(id: String, name: String, type: NotionPropertyType, options: [String] = []) {
+        self.id = id
+        self.name = name
+        self.type = type
+        self.options = options
+    }
+
+    private enum CodingKeys: String, CodingKey { case id, name, type }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        name = try container.decode(String.self, forKey: .name)
+        type = try container.decode(NotionPropertyType.self, forKey: .type)
+
+        // Les options vivent sous une clé qui porte le nom du type — `select`
+        // ou `status` —, et un `status` les groupe en plus par avancement. On
+        // ne retient que la liste plate : seule la valeur écrite compte.
+        let dynamic = try decoder.container(keyedBy: DynamicKey.self)
+        if let key = DynamicKey(stringValue: type.rawValue),
+           let holder = try? dynamic.decode(OptionHolder.self, forKey: key) {
+            options = holder.options?.map(\.name) ?? []
+        } else {
+            options = []
+        }
+    }
+
+    private struct DynamicKey: CodingKey {
+        var stringValue: String
+        var intValue: Int? { nil }
+        init?(stringValue: String) { self.stringValue = stringValue }
+        init?(intValue: Int) { nil }
+    }
+
+    private struct OptionHolder: Decodable {
+        struct Option: Decodable { let name: String }
+        let options: [Option]?
     }
 }
 
@@ -156,6 +197,12 @@ public struct NotionList<Element: Decodable & Sendable>: Decodable, Sendable {
     public let hasMore: Bool
     public let nextCursor: String?
 
+    public init(results: [Element], hasMore: Bool, nextCursor: String?) {
+        self.results = results
+        self.hasMore = hasMore
+        self.nextCursor = nextCursor
+    }
+
     private enum CodingKeys: String, CodingKey {
         case results, hasMore = "has_more", nextCursor = "next_cursor"
     }
@@ -200,4 +247,78 @@ public struct NotionErrorBody: Decodable, Sendable {
     public let error: String?
     public let code: String?
     public let message: String?
+}
+
+/// Réponse de `POST /v1/pages` : seul l'identifiant nous intéresse — il prouve
+/// la création et sert de parent au commentaire.
+public struct NotionCreatedPage: Decodable, Sendable {
+    public let id: String
+}
+
+/// Réponse de `POST /v1/comments`. Le corps n'est pas exploité : la publication
+/// est best-effort, seul son succès compte (FR-026a).
+public struct NotionCreatedComment: Decodable, Sendable {
+    public let id: String?
+}
+
+/// Une page Notion telle que renvoyée par l'interrogation d'une source.
+///
+/// `properties` reste un dictionnaire non typé : c'est `PropertyMapper` qui en
+/// extrait des valeurs, le schéma variant d'un workspace à l'autre.
+public struct NotionPage: Decodable, Sendable {
+    public let id: String
+    public let properties: [String: Any]
+    /// Les pages en corbeille ne doivent jamais être proposées (FR-009).
+    public let inTrash: Bool
+
+    private enum CodingKeys: String, CodingKey {
+        case id, properties, inTrash = "in_trash"
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        inTrash = try container.decodeIfPresent(Bool.self, forKey: .inTrash) ?? false
+        let raw = try container.decodeIfPresent(JSONValue.self, forKey: .properties)
+        properties = (raw?.unwrapped as? [String: Any]) ?? [:]
+    }
+}
+
+/// Valeur JSON quelconque, pour les blocs dont le schéma varie d'un workspace à
+/// l'autre — le `properties` d'une page.
+///
+/// `Decodable` n'accepte pas `Any` directement ; ce type sert de passerelle vers
+/// les dictionnaires non typés que `PropertyMapper` sait lire.
+enum JSONValue: Decodable {
+    case null
+    case bool(Bool)
+    case number(Double)
+    case string(String)
+    case array([JSONValue])
+    case object([String: JSONValue])
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        if container.decodeNil() { self = .null }
+        else if let value = try? container.decode(Bool.self) { self = .bool(value) }
+        else if let value = try? container.decode(Double.self) { self = .number(value) }
+        else if let value = try? container.decode(String.self) { self = .string(value) }
+        else if let value = try? container.decode([JSONValue].self) { self = .array(value) }
+        else if let value = try? container.decode([String: JSONValue].self) { self = .object(value) }
+        else {
+            throw DecodingError.dataCorruptedError(in: container,
+                                                   debugDescription: "valeur JSON non reconnue")
+        }
+    }
+
+    var unwrapped: Any? {
+        switch self {
+        case .null: return nil
+        case .bool(let value): return value
+        case .number(let value): return value
+        case .string(let value): return value
+        case .array(let values): return values.map { $0.unwrapped as Any }
+        case .object(let values): return values.compactMapValues { $0.unwrapped }
+        }
+    }
 }

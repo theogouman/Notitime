@@ -16,9 +16,9 @@ struct NotitimeApp: App {
             RootView(state: root)
                 .modelContainer(root.containerOrEmpty)
         } label: {
-            // Au repos, uniquement l'icône. Le compte à rebours et le chronomètre
-            // viendront s'y afficher avec la machine à états (FR-025).
-            Image(systemName: "timer")
+            // FR-025 : au repos l'icône seule ; en session, le temps restant et
+            // le nom court de la tâche.
+            MenuBarLabel(state: root)
         }
         .menuBarExtraStyle(.window)
 
@@ -73,9 +73,11 @@ final class RootState: ObservableObject {
     private(set) var environment: AppEnvironment?
     private(set) var onboarding: OnboardingModel?
 
-    /// Republié depuis le modèle d'onboarding : le menu doit se redessiner quand
-    /// la configuration progresse dans la fenêtre.
-    private var onboardingObservation: AnyCancellable?
+    private(set) var session: SessionController?
+
+    /// Republié depuis les modèles enfants : le menu doit se redessiner quand la
+    /// configuration progresse dans la fenêtre ou qu'une session avance.
+    private var observations: [AnyCancellable] = []
 
     init() {
         do {
@@ -83,11 +85,20 @@ final class RootState: ObservableObject {
             self.environment = environment
             let onboarding = OnboardingModel(environment: environment)
             self.onboarding = onboarding
-            onboardingObservation = onboarding.objectWillChange.sink { [weak self] _ in
-                self?.objectWillChange.send()
-            }
+            let session = SessionController(environment: environment)
+            self.session = session
+            observations = [
+                onboarding.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() },
+                session.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
+            ]
             onboarding.restoreFromPersistence()
-            Task { await validateAtStartup(environment) }
+            Task {
+                await validateAtStartup(environment)
+                // Une session retrouvée reprend la main avant toute autre chose :
+                // son état est déjà persisté, l'écran doit le refléter (FR-022).
+                await session.restore()
+                if onboarding.isConfigured { await session.loadTasks() }
+            }
         } catch {
             startupMessage = error.localizedDescription
         }
@@ -151,6 +162,11 @@ struct RootView: View {
 
             summary
 
+            if state.isConfigured, let session = state.session {
+                SessionControls(controller: session)
+                Divider()
+            }
+
             if state.isConfigured {
                 Button("Réglages…") { ConfigurationWindow.present(openWindow) }
             } else {
@@ -185,3 +201,25 @@ struct RootView: View {
 }
 
 
+
+/// Libellé de la barre de menus (FR-025).
+struct MenuBarLabel: View {
+    @ObservedObject var state: RootState
+
+    var body: some View {
+        switch state.session?.phase {
+        case .running(let remaining, let taskTitle):
+            // Le nom est raccourci : la barre de menus est étroite, et le
+            // compte à rebours est ce qu'on vient y lire.
+            Text("\(SessionControls.format(remaining)) · \(MenuBarLabel.short(taskTitle))")
+        case .onBreak(let remaining, _):
+            Text("☕︎ \(SessionControls.format(remaining))")
+        default:
+            Image(systemName: "timer")
+        }
+    }
+
+    static func short(_ title: String, limit: Int = 18) -> String {
+        title.count <= limit ? title : String(title.prefix(limit - 1)) + "…"
+    }
+}

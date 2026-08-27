@@ -156,3 +156,24 @@ final class StubSleepObserver: SleepObserver, @unchecked Sendable {
     func emit(_ event: PowerEvent) { continuation.yield(event) }
     func finish() { continuation.finish() }
 }
+
+/// Persistance de session qui compte ses écritures.
+///
+/// FR-022 exige que l'état soit réécrit **avant** que le contrôle ne revienne à
+/// l'appelant : compter les écritures est la seule façon de le vérifier sans
+/// interrompre réellement le processus.
+actor RecordingSessionPersistence: SessionPersistence {
+    private(set) var writeCount = 0
+    /// Double option : `nil` = jamais écrit ; `.some(nil)` = effacé explicitement.
+    private(set) var stored: SessionSnapshot??
+
+    func save(_ snapshot: SessionSnapshot?) async {
+        writeCount += 1
+        stored = .some(snapshot)
+    }
+
+    func load() async -> SessionSnapshot? {
+        if case .some(let value) = stored { return value }
+        return nil
+    }
+}
