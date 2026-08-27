@@ -152,6 +152,19 @@ for scale in [1, 2] {
                           cropsToArtwork: true))
 }
 
+// Logo Notion du bouton de connexion, en gabarit : sur un bouton teinté, un
+// logo noir serait illisible, et le blanc l'est en mode sombre. Le système le
+// colore comme le libellé qu'il accompagne. Seul le tracé noir du logo fourni
+// est rendu — la page blanche qu'il porte deviendrait un aplat opaque.
+let notionMark = "\(root)/Design/notion-mark.svg"
+let notionLogo = "\(root)/App/Resources/Assets.xcassets/NotionLogo.imageset"
+for scale in [1, 2] {
+    let suffix = scale == 1 ? "" : "@2x"
+    jobs.append(Rendering(source: notionMark,
+                          destination: "\(notionLogo)/notion\(suffix).png",
+                          points: 15, scale: scale, inset: 0, cropsToArtwork: true))
+}
+
 print("Rendu des icônes :")
 for job in jobs { try render(job) }
 print("Terminé — \(jobs.count) fichiers.")

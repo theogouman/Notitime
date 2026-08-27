@@ -32,8 +32,17 @@ Comportements visibles par l'utilisateur, dans l'ordre des livraisons.
   rebours en Pomodoro, temps écoulé en suivi libre, chiffres à chasse fixe pour
   que rien ne se déplace de seconde en seconde.
 
+### Premier lancement
+
+- Écran d'accueil : logo de l'application, nom, ce qu'elle fait, et un seul
+  bouton — « Connecter mon Notion », portant le logo Notion.
+- Cet écran s'ouvre de lui-même au premier lancement et après une déconnexion :
+  il n'y avait jusqu'ici rien à faire dans le menu, sans que rien ne le dise.
+- Clic droit sur l'icône de la barre de menus : Réglages, À propos, Quitter.
+
 ### Réglages
 
+- « Se déconnecter » depuis les réglages, qui ramène à l'écran d'accueil.
 - Section « Connexion » remaniée : le nom du workspace en titre, son icône —
   emoji comme image —, la date de connexion, et les bases liées présentées en
   tableau, chacune modifiable depuis sa ligne.

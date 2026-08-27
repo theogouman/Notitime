@@ -70,6 +70,9 @@ enum SingleInstanceGuard {
 final class RootState: ObservableObject {
 
     @Published private(set) var startupMessage: String?
+    /// L'accueil ne s'ouvre qu'une fois par lancement : le rouvrir à chaque
+    /// réapparition du libellé le ferait resurgir sans qu'on l'ait demandé.
+    var hasPresentedOnboarding = false
     private(set) var environment: AppEnvironment?
     private(set) var onboarding: OnboardingModel?
 
@@ -240,6 +243,9 @@ struct RootView: View {
 /// reconnaissable sans rien gagner en information, que le texte porte déjà.
 struct MenuBarLabel: View {
     @ObservedObject var state: RootState
+    @Environment(\.openWindow) private var openWindow
+    /// Retenu par la vue : un moniteur d'événements libéré cesse d'observer.
+    @State private var contextMenu: StatusItemContextMenu?
 
     var body: some View {
         HStack(spacing: 4) {
@@ -255,6 +261,22 @@ struct MenuBarLabel: View {
             }
         }
         .accessibilityLabel(accessibilityLabel)
+        .onAppear {
+            // Premier lancement ou déconnexion : il n'y a rien à faire dans le
+            // menu tant que Notion n'est pas connecté, autant amener l'accueil.
+            if !state.isConfigured, !state.hasPresentedOnboarding {
+                state.hasPresentedOnboarding = true
+                ConfigurationWindow.present(openWindow)
+            }
+
+            guard contextMenu == nil else { return }
+            let menu = StatusItemContextMenu(
+                openConfiguration: { ConfigurationWindow.present(openWindow) },
+                quit: { state.requestTermination() }
+            )
+            menu.install()
+            contextMenu = menu
+        }
     }
 
     /// Ce qui suit l'icône, ou rien quand rien ne tourne.

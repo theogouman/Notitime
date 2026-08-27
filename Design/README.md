@@ -6,6 +6,8 @@ Les SVG sont la source de vérité ; les PNG du catalogue en sont dérivés.
 | --- | --- | --- |
 | `notitime-icon.svg` | icône de l'app (Dock, Finder, À propos) | `App/Resources/Assets.xcassets/AppIcon.appiconset` |
 | `notitime-template.svg` | icône de la barre de menus | `App/Resources/Assets.xcassets/MenuBarIcon.imageset` |
+| `notion.svg` | logo Notion fourni, tel quel (référence) | — |
+| `notion-mark.svg` | logo Notion du bouton de connexion | `App/Resources/Assets.xcassets/NotionLogo.imageset` |
 
 ## Régénérer
 
@@ -22,6 +24,12 @@ commités — le projet doit rester constructible sans lancer ce script.
 Le rendu l'inscrit dans la grille macOS — 824 sur un canevas de 1024 — sans quoi
 l'icône paraîtrait plus grosse que ses voisines dans le Dock. Le facteur est
 `macOSGridInset` dans le script.
+
+**Logo Notion.** `notion-mark.svg` est le seul tracé noir de `notion.svg`, sans
+la page blanche qu'il recouvre : rendu en gabarit, un aplat blanc deviendrait
+opaque et masquerait le « N ». Le gabarit prend la couleur du libellé du bouton,
+ce qui le garde lisible sur fond teinté comme dans les deux thèmes — un logo noir
+figé disparaîtrait sur l'un des deux.
 
 **Barre de menus.** Le gabarit doit être **monochrome et à trous** : le système
 n'en garde que l'opacité pour le teinter selon le thème clair ou sombre et l'état

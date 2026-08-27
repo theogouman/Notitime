@@ -29,6 +29,9 @@ enum ConfigurationWindow {
 struct ConfigurationView: View {
     @ObservedObject var state: RootState
 
+    private enum Tab: Hashable { case connection, settings }
+    @State private var tab: Tab = .connection
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
@@ -41,16 +44,21 @@ struct ConfigurationView: View {
                 }
 
                 if let onboarding = state.onboarding {
-                    TabView {
+                    TabView(selection: $tab) {
                         ScrollView {
                             OnboardingView(model: onboarding)
                                 .padding(4)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                         }
                         .tabItem { Label("Connexion", systemImage: "link") }
+                        .tag(Tab.connection)
 
-                        SettingsView(state: state)
+                        // Se déconnecter depuis les réglages ramène à l'onglet
+                        // Connexion : l'écran d'accueil y est déjà, et rester
+                        // devant des réglages sans connexion n'aurait aucun sens.
+                        SettingsView(state: state, onDisconnected: { tab = .connection })
                             .tabItem { Label("Réglages", systemImage: "gearshape") }
+                            .tag(Tab.settings)
                     }
                     .frame(minHeight: 380)
                 } else {

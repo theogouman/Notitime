@@ -9,7 +9,13 @@ import NotitimeCore
 struct SettingsView: View {
 
     @ObservedObject var state: RootState
+    /// Appelé après une déconnexion : la fenêtre revient à l'onglet Connexion.
+    var onDisconnected: () -> Void = {}
+
     @Query private var stored: [AppSettings]
+    @Query private var pending: [OutboxEntry]
+
+    @State private var confirmingDisconnect = false
 
     private var settings: AppSettings? { stored.first }
 
@@ -26,6 +32,7 @@ struct SettingsView: View {
                     .foregroundStyle(.secondary)
             }
             bindings
+            connection
             journal
         }
         .formStyle(.grouped)
@@ -199,6 +206,36 @@ struct SettingsView: View {
         case .timeEntries: return "Time Entries"
         case .projects: return "Projets"
         }
+    }
+
+    // MARK: - Connexion (FR-008)
+
+    @ViewBuilder
+    private var connection: some View {
+        Section("Connexion") {
+            Button("Se déconnecter…") { confirmingDisconnect = true }
+                .confirmationDialog(disconnectPrompt, isPresented: $confirmingDisconnect) {
+                    Button("Se déconnecter", role: .destructive) {
+                        Task {
+                            await state.onboarding?.disconnect()
+                            onDisconnected()
+                        }
+                    }
+                    Button("Annuler", role: .cancel) {}
+                }
+            Text("Vos tokens sont effacés du trousseau. Les entrées en attente "
+                 + "restent en file et repartiront à la prochaine connexion.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    /// FR-008 : avertir si des entrées sont encore en attente d'envoi.
+    private var disconnectPrompt: String {
+        pending.isEmpty
+            ? "Se déconnecter de Notion ?"
+            : "\(pending.count) entrée(s) attendent d'être envoyées. Elles resteront en "
+            + "file et repartiront à la prochaine connexion. Se déconnecter ?"
     }
 
     // MARK: - Journal (FR-037, T106)
