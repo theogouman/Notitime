@@ -34,11 +34,11 @@ struct OnboardingView: View {
         ConnectPromptView { Task { await model.connect() } }
     }
 
-    private func progress(_ message: String) -> some View {
-        HStack(spacing: 8) {
-            ProgressView().controlSize(.small)
-            Text(message).font(.callout)
-        }
+    /// Une attente d'API se dit en grand, au centre, et scintille : la molette
+    /// de six points ne disait ni ce qu'on attend, ni que quelque chose vit.
+    private func progress(_ message: LocalizedStringKey) -> some View {
+        ShimmerText(text: message)
+            .frame(maxWidth: .infinity, minHeight: 120)
     }
 
     /// État de chaque rôle, toujours visible pendant la configuration.

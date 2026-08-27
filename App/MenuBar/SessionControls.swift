@@ -25,8 +25,9 @@ struct SessionControls: View {
 
             case .running(let remaining, let taskPageID):
                 Text(controller.title(of: taskPageID)).font(.callout).lineLimit(1)
-                Text(remaining == nil ? controller.elapsedLabel : SessionControls.format(remaining))
-                    .font(.system(.title2, design: .monospaced))
+                countdown(remaining == nil ? controller.elapsedLabel
+                                           : SessionControls.format(remaining),
+                          countsDown: remaining != nil)
                 HStack(spacing: 6) {
                     // FR-018 : le Pomodoro n'offre pas de pause ; le Tracker si.
                     if controller.isTracker {
@@ -51,8 +52,7 @@ struct SessionControls: View {
 
             case .onBreak(let remaining, let isLong):
                 Text(isLong ? "Pause longue" : "Pause").font(.callout)
-                Text(SessionControls.format(remaining))
-                    .font(.system(.title2, design: .monospaced))
+                countdown(SessionControls.format(remaining))
                 HStack(spacing: 6) {
                     // US2.2 : on doit pouvoir repartir immédiatement.
                     Button("Repartir") { Task { await resume() } }
@@ -80,6 +80,17 @@ struct SessionControls: View {
                 failure(entry)
             }
         }
+    }
+
+    /// Le temps qui passe : chaque chiffre remplacé glisse vers le bas plutôt
+    /// que de sauter, et seuls les chiffres qui changent bougent.
+    /// Un Tracker compte à l'endroit : lui faire descendre ses chiffres
+    /// contredirait ce qu'il montre.
+    private func countdown(_ label: String, countsDown: Bool = true) -> some View {
+        Text(label)
+            .font(.system(.title2, design: .monospaced))
+            .contentTransition(.numericText(countsDown: countsDown))
+            .animation(.easeOut(duration: 0.25), value: label)
     }
 
     /// « Repartir » ramène au choix de la méthode sur la même tâche : la pause

@@ -13,11 +13,9 @@ struct TaskListStates: View {
 
     var body: some View {
         if controller.isLoadingTasks {
-            HStack(spacing: 6) {
-                ProgressView().controlSize(.small)
-                Text("Chargement des tâches…").font(.callout)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
+            // Le popover est étroit : même traitement, une taille en dessous.
+            ShimmerText(text: "Chargement des tâches…", font: .title3.weight(.semibold))
+                .frame(maxWidth: .infinity, minHeight: 80)
         } else {
             VStack(alignment: .leading, spacing: 6) {
                 Text(controller.notice ?? "Aucune tâche à proposer.")

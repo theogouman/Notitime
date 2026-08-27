@@ -31,6 +31,14 @@ Comportements visibles par l'utilisateur, dans l'ordre des livraisons.
 - Pendant une session, l'icône reste affichée et le temps la suit — compte à
   rebours en Pomodoro, temps écoulé en suivi libre, chiffres à chasse fixe pour
   que rien ne se déplace de seconde en seconde.
+- Dans le menu, le temps change chiffre par chiffre : seuls les chiffres qui
+  bougent glissent, vers le bas en Pomodoro, vers le haut en suivi libre.
+- Les attentes réseau — autorisation, détection des bases, chargement des tâches
+  — s'annoncent par un titre en grand, centré, qui scintille, au lieu d'une
+  molette accompagnée d'une ligne en petit.
+- L'icône du workspace Notion ne surgit plus une fois téléchargée : un squelette
+  occupe sa place, bat une fois, puis lui cède par un fondu croisé.
+- Ces trois animations s'effacent quand le système demande moins de mouvement.
 
 ### Premier lancement
 

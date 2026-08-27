@@ -156,10 +156,16 @@ struct WorkspaceIconView: View {
         Group {
             switch icon {
             case .image(let url):
-                AsyncImage(url: url) { image in
-                    image.resizable().scaledToFill()
-                } placeholder: {
-                    placeholder
+                // L'icône vient du réseau : elle se pose par fondu depuis un
+                // squelette plutôt que d'apparaître d'un coup une fois chargée.
+                AsyncImage(url: url) { phase in
+                    SkeletonReveal(isRevealed: phase.image != nil) {
+                        if let image = phase.image {
+                            image.resizable().scaledToFill()
+                        }
+                    } placeholder: {
+                        skeleton
+                    }
                 }
             case .emoji(let emoji):
                 Text(emoji).font(.system(size: side * 0.62))
@@ -175,6 +181,13 @@ struct WorkspaceIconView: View {
     private var placeholder: some View {
         Image(systemName: "square.grid.2x2")
             .foregroundStyle(.secondary)
+    }
+
+    /// Le squelette occupe exactement la place de l'icône : c'est ce qui rend
+    /// l'échange invisible en mise en page.
+    private var skeleton: some View {
+        RoundedRectangle(cornerRadius: 7, style: .continuous)
+            .fill(Color.secondary.opacity(0.22))
     }
 }
 
@@ -234,10 +247,8 @@ struct DatabasePickerSheet: View {
     private var content: some View {
         switch state {
         case .loading:
-            HStack(spacing: 8) {
-                ProgressView().controlSize(.small)
-                Text("Lecture des bases partagées avec Notitime…").font(.callout)
-            }
+            ShimmerText(text: "Lecture des bases partagées avec Notitime…")
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
 
         case .failed(let message):
             VStack(alignment: .leading, spacing: 6) {
