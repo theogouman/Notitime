@@ -1,0 +1,13 @@
+{
+  "object": "data_source",
+  "id": "ds-tpl-projects",
+  "title": [{ "plain_text": "Projets" }],
+  "parent": { "type": "database_id", "database_id": "db-tpl-projects" },
+  "properties": {
+    "Name":     { "id": "title", "name": "Name",     "type": "title" },
+    "Status":   { "id": "p-sta", "name": "Status",   "type": "status" },
+    "Type":     { "id": "p-typ", "name": "Type",     "type": "select" },
+    "Deadline": { "id": "p-dl",  "name": "Deadline", "type": "date" },
+    "Tâches":   { "id": "p-tsk", "name": "Tâches",   "type": "relation" }
+  }
+}

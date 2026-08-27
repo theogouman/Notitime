@@ -134,13 +134,20 @@ public struct NotionBlock: Decodable, Sendable {
 
     public var isChildDatabase: Bool { type == "child_database" }
 
-    /// Une page enfant est une **autre page** : la descente s'y arrêterait dans un
-    /// espace de travail entier. Une base a pour enfants ses lignes, pas des blocs.
-    public var isExternalPage: Bool { type == "child_page" }
+    public var isChildPage: Bool { type == "child_page" }
 
-    /// Conteneur de mise en page à traverser : colonnes, bascules, encarts, listes.
+    /// Bloc dans lequel la descente continue.
+    ///
+    /// Les sous-pages en font partie : un template range couramment ses bases
+    /// dans une page « Template » nichée sous un encart, et s'arrêter à la
+    /// première sous-page ne remontait alors aucune base. L'exploration part
+    /// toujours de la page dupliquée et Notion ne permet pas de remonter vers le
+    /// parent : elle reste donc dans le sous-arbre du template, et la borne de
+    /// profondeur la termine.
+    ///
+    /// Une base est exclue : ses enfants sont ses lignes, pas des blocs.
     public var shouldDescend: Bool {
-        hasChildren && !isChildDatabase && !isExternalPage
+        hasChildren && !isChildDatabase
     }
 }
 

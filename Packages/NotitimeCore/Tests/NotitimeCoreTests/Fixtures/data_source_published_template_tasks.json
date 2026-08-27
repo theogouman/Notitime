@@ -1,0 +1,15 @@
+{
+  "object": "data_source",
+  "id": "ds-tpl-tasks",
+  "title": [{ "plain_text": "Tâches" }],
+  "parent": { "type": "database_id", "database_id": "db-tpl-tasks" },
+  "properties": {
+    "Name":         { "id": "title",  "name": "Name",         "type": "title" },
+    "Status":       { "id": "p-sta",  "name": "Status",       "type": "status" },
+    "Type":         { "id": "p-typ",  "name": "Type",         "type": "select" },
+    "Responsable":  { "id": "p-per",  "name": "Responsable",  "type": "people" },
+    "Projets":      { "id": "p-prj",  "name": "Projets",      "type": "relation" },
+    "Time Tracker": { "id": "p-tt",   "name": "Time Tracker", "type": "relation" },
+    "Deadline":     { "id": "p-dl",   "name": "Deadline",     "type": "date" }
+  }
+}

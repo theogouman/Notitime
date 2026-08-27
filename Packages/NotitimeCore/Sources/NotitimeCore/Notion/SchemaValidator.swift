@@ -42,15 +42,24 @@ public struct SchemaValidator: Sendable {
                 continue
             }
 
-            let candidates = dataSource.properties.values
-                .filter { requirement.acceptedTypes.contains($0.type) && !consumed.contains($0.id) }
+            let candidates = SchemaValidator.ranked(
+                dataSource.properties.values
+                    .filter { requirement.acceptedTypes.contains($0.type) && !consumed.contains($0.id) },
+                for: requirement
+            )
 
-            // Nom exact d'abord, puis insensible à la casse, puis n'importe quel
-            // candidat du bon type s'il est seul : au-delà, on préfère demander.
+            // Du plus sûr au plus permissif. L'ordre compte : chaque étape ne
+            // s'applique qu'à ce que la précédente n'a pas su trancher.
             let chosen = candidates.first { $0.name == requirement.defaultName }
                 ?? candidates.first { $0.name.compare(requirement.defaultName,
                                                       options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame }
+                // Fragment de nom : « Date de début » pour « Début », « Status »
+                // pour « Statut ». C'est ce qui manquait face au template réel.
+                ?? SchemaValidator.matchingHint(requirement, among: candidates)
                 ?? (candidates.count == 1 ? candidates.first : nil)
+                // Dernier recours : un seul candidat du type le plus attendu.
+                // Un `status` l'emporte alors sur un `select` pour un statut.
+                ?? SchemaValidator.onlyOfPreferredType(requirement, among: candidates)
 
             if let chosen {
                 map[requirement.key] = chosen.reference
@@ -68,6 +77,47 @@ public struct SchemaValidator: Sendable {
             : .missing(properties: missing, creatable: creatable, propertyMap: map)
     }
 
+    // MARK: - Départage
+
+    /// Ordonne les candidats : type le plus attendu d'abord, puis par nom.
+    ///
+    /// `properties` est un dictionnaire — son ordre d'itération n'est pas
+    /// stable. Sans ce classement, deux exécutions pourraient mapper deux
+    /// propriétés interchangeables différemment, et le mapping persisté
+    /// changerait d'un lancement à l'autre.
+    static func ranked(_ candidates: some Collection<NotionPropertySchema>,
+                       for requirement: RequiredProperty) -> [NotionPropertySchema] {
+        candidates.sorted { left, right in
+            let leftRank = requirement.acceptedTypes.firstIndex(of: left.type) ?? .max
+            let rightRank = requirement.acceptedTypes.firstIndex(of: right.type) ?? .max
+            if leftRank != rightRank { return leftRank < rightRank }
+            return left.name.localizedStandardCompare(right.name) == .orderedAscending
+        }
+    }
+
+    /// Premier candidat dont le nom contient l'un des fragments attendus, les
+    /// fragments étant essayés dans l'ordre de préférence.
+    static func matchingHint(_ requirement: RequiredProperty,
+                             among candidates: [NotionPropertySchema]) -> NotionPropertySchema? {
+        for hint in requirement.nameHints {
+            if let match = candidates.first(where: { $0.name.containsFolded(hint) }) {
+                return match
+            }
+        }
+        return nil
+    }
+
+    /// Un seul candidat du type le plus attendu : le retenir plutôt que de
+    /// renoncer parce qu'un type moins probable est également présent.
+    static func onlyOfPreferredType(_ requirement: RequiredProperty,
+                                    among candidates: [NotionPropertySchema]) -> NotionPropertySchema? {
+        for type in requirement.acceptedTypes {
+            let ofType = candidates.filter { $0.type == type }
+            if ofType.count == 1 { return ofType.first }
+        }
+        return nil
+    }
+
     /// Charge utile de création des propriétés manquantes que l'app sait créer.
     /// Ce qu'elle ne sait pas créer reste à l'utilisateur — on ne devine pas la
     /// source cible d'une relation.
@@ -79,5 +129,13 @@ public struct SchemaValidator: Sendable {
             }
         }
         return payload
+    }
+}
+
+extension String {
+    /// Comparaison de fragment insensible à la casse **et aux accents** :
+    /// « Durée en min » doit répondre à « duree » comme à « durée ».
+    func containsFolded(_ fragment: String) -> Bool {
+        range(of: fragment, options: [.caseInsensitive, .diacriticInsensitive]) != nil
     }
 }

@@ -14,7 +14,36 @@ struct KeychainTokenStore: TokenStore {
         case refresh = "notion.refreshToken"
     }
 
-    struct KeychainError: Error { let status: OSStatus }
+    /// Échec d'accès au trousseau.
+    ///
+    /// Le cas courant en v1 n'est pas une panne : le bundle n'étant pas signé,
+    /// son identité de code change à chaque build et macOS redemande
+    /// l'autorisation d'accéder à l'entrée existante. L'utilisateur peut refuser,
+    /// et ce refus doit s'expliquer — pas remonter un code d'erreur brut.
+    struct KeychainError: LocalizedError {
+        let status: OSStatus
+
+        /// L'utilisateur a refusé ou annulé la demande d'accès au trousseau.
+        var isUserRefusal: Bool {
+            status == errSecUserCanceled || status == errSecAuthFailed
+                || status == errSecInteractionNotAllowed
+        }
+
+        var errorDescription: String? {
+            guard isUserRefusal else {
+                let detail = SecCopyErrorMessageString(status, nil) as String?
+                return "Le trousseau macOS a refusé l'accès (\(detail ?? "code \(status)"))."
+            }
+            return "Notitime n'a pas pu accéder au trousseau : l'autorisation a été refusée."
+        }
+
+        var recoverySuggestion: String? {
+            guard isUserRefusal else { return nil }
+            return "Vos tokens sont intacts. Réessayez et saisissez le mot de passe de "
+                 + "votre session, ou choisissez « Toujours autoriser » pour ne plus "
+                 + "être sollicité après chaque mise à jour de l'application."
+        }
+    }
 
     private let service: String
 

@@ -33,6 +33,10 @@ public enum ResponseClass: Equatable, Sendable {
         case .success, .transient: return false
         }
     }
+
+    /// `404`. Définitif pour la file d'envoi, mais pas pendant la duplication du
+    /// template : la page peut n'être pas encore visible le temps de la copie.
+    public var isNotFound: Bool { self == .permanent(.notFound) }
 }
 
 public enum ResponseClassifier {

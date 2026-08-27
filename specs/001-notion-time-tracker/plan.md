@@ -165,6 +165,26 @@ La seule alternative serait d'ouvrir l'URL dans le navigateur par défaut avec
 extensions du navigateur, et laisse n'importe quelle application ayant enregistré
 le scheme intercepter le retour sans que le système n'arbitre.
 
+**macOS redemande le mot de passe du trousseau après chaque build.**
+Le bundle v1 n'est pas signé. Son identité de code change donc d'une compilation
+à l'autre, et le trousseau ne reconnaît plus l'application qui avait créé
+l'entrée `com.notitime.app` : il exige l'accord explicite de l'utilisateur avant
+de la rouvrir. Ce n'est ni une fuite, ni un défaut de l'application — c'est la
+protection du trousseau qui fonctionne comme prévu.
+
+Conséquences pratiques :
+
+- « Toujours autoriser » vaut pour l'identité de code courante. Le prochain build
+  non signé resollicitera l'utilisateur ; ce sera stable dès que le bundle sera
+  signé avec un identifiant d'équipe (voir la dette technique ci-dessous).
+- Le refus est un cas ordinaire, pas une panne. `KeychainTokenStore.KeychainError`
+  distingue `errSecUserCanceled`, `errSecAuthFailed` et `errSecInteractionNotAllowed`
+  d'une véritable erreur, et porte un message et une conduite à tenir.
+- **Un refus ne déconnecte jamais.** Les tokens ne sont effacés que sur révocation
+  côté Notion (`invalid_grant`) ou déconnexion volontaire, jamais sur un échec
+  d'accès au trousseau — sans quoi un clic sur « Refuser » obligerait à refaire
+  tout le parcours OAuth. Deux tests le verrouillent dans `AuthTests`.
+
 ## Dette technique assumée
 
 **Mode langage Swift 5 sur toolchain 6.3.3.** Le package est déclaré en `swift-tools-version:5.10`, conformément au socle « Swift 5.10 minimum » des contraintes techniques. La toolchain réellement installée est la 6.3.3, mais la déclaration place la compilation en **mode langage Swift 5** : la vérification stricte de la concurrence n'est donc pas appliquée, et les annotations `Sendable` ne sont pas contrôlées par le compilateur.

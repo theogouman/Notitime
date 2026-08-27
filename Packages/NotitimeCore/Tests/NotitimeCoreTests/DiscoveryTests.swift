@@ -129,6 +129,147 @@ final class DiscoveryTests: XCTestCase {
         XCTAssertEqual(filter["property"] as? String, "object")
     }
 
+    // MARK: - Duplication asynchrone
+
+    /// Notion crée la page dupliquée de façon asynchrone : au retour de l'OAuth,
+    /// elle peut exister tout en étant encore vide. Interroger une seule fois
+    /// remontait alors zéro base et menait l'utilisateur dans une impasse.
+    func testTemplateDiscoveryRetriesWhileTheCopyIsStillEmpty() async throws {
+        let transport = FixtureTransport()
+        let path = NotionAPI.Path.blockChildren("page-tpl") + "?page_size=100"
+        // Deux réponses vides, puis la page complète : les issues sont consommées
+        // dans l'ordre d'empilement.
+        await transport.enqueue(.get, path, status: 200,
+                                json: #"{"object":"list","results":[],"has_more":false}"#)
+        await transport.enqueue(.get, path, status: 200,
+                                json: #"{"object":"list","results":[],"has_more":false}"#)
+        await transport.enqueue(.get, path, status: 200,
+                                json: try Fixture.string("blocks_children_template"))
+        for (db, title, ds) in [("db-tasks", "Tâches", "ds-tasks"),
+                                ("db-time-entries", "Time Tracker", "ds-time-entries"),
+                                ("db-projects", "Projets", "ds-projects")] {
+            await transport.enqueue(.get, NotionAPI.Path.database(db), status: 200,
+                                    json: database(db, title: title, sources: [(ds, title)]))
+        }
+        await transport.enqueue(.get, NotionAPI.Path.dataSource("ds-tasks"), status: 200,
+                                json: try Fixture.string("data_source_tasks_valid"))
+        await transport.enqueue(.get, NotionAPI.Path.dataSource("ds-time-entries"), status: 200,
+                                json: try Fixture.string("data_source_time_entries_valid"))
+        await transport.enqueue(.get, NotionAPI.Path.dataSource("ds-projects"), status: 200,
+                                json: try Fixture.string("data_source_projects_valid"))
+
+        let time = VirtualTimeSource()
+        let outcome = try await RoleDiscovery(client: makeClient(transport), time: time)
+            .discoverFromTemplate(pageID: "page-tpl")
+
+        XCTAssertEqual(outcome.assigned.count, 3, "la troisième tentative aboutit")
+        let calls = await transport.requestCount(.get, path)
+        XCTAssertEqual(calls, 3)
+        XCTAssertEqual(time.sleepCount, 2, "une attente entre chaque tentative")
+    }
+
+    /// La page dupliquée peut n'être pas encore visible du tout : un `404`
+    /// pendant la fenêtre de copie se réessaie au lieu d'échouer.
+    func testTemplateDiscoveryRetriesOnNotFound() async throws {
+        let transport = FixtureTransport()
+        let path = NotionAPI.Path.blockChildren("page-tpl") + "?page_size=100"
+        await transport.enqueue(.get, path, status: 404,
+                                json: #"{"object":"error","code":"object_not_found"}"#)
+        await transport.enqueue(.get, path, status: 200,
+                                json: try Fixture.string("blocks_children_template"))
+        for (db, title, ds) in [("db-tasks", "Tâches", "ds-tasks"),
+                                ("db-time-entries", "Time Tracker", "ds-time-entries"),
+                                ("db-projects", "Projets", "ds-projects")] {
+            await transport.enqueue(.get, NotionAPI.Path.database(db), status: 200,
+                                    json: database(db, title: title, sources: [(ds, title)]))
+        }
+        await transport.enqueue(.get, NotionAPI.Path.dataSource("ds-tasks"), status: 200,
+                                json: try Fixture.string("data_source_tasks_valid"))
+        await transport.enqueue(.get, NotionAPI.Path.dataSource("ds-time-entries"), status: 200,
+                                json: try Fixture.string("data_source_time_entries_valid"))
+        await transport.enqueue(.get, NotionAPI.Path.dataSource("ds-projects"), status: 200,
+                                json: try Fixture.string("data_source_projects_valid"))
+
+        let outcome = try await RoleDiscovery(client: makeClient(transport), time: VirtualTimeSource())
+            .discoverFromTemplate(pageID: "page-tpl")
+
+        XCTAssertEqual(outcome.assigned.count, 3)
+    }
+
+    /// L'attente est bornée : une page qui reste vide rend un résultat vide —
+    /// que l'appelant doit savoir expliquer — plutôt que de tourner sans fin.
+    func testTemplateDiscoveryGivesUpAfterItsBudget() async throws {
+        let transport = FixtureTransport()
+        let path = NotionAPI.Path.blockChildren("page-tpl") + "?page_size=100"
+        for _ in 0..<RoleDiscovery.templateAttempts {
+            await transport.enqueue(.get, path, status: 200,
+                                    json: #"{"object":"list","results":[],"has_more":false}"#)
+        }
+
+        let outcome = try await RoleDiscovery(client: makeClient(transport), time: VirtualTimeSource())
+            .discoverFromTemplate(pageID: "page-tpl")
+
+        XCTAssertTrue(outcome.isEmpty, "aucun rôle, aucun candidat, aucun choix")
+        let calls = await transport.requestCount(.get, path)
+        XCTAssertEqual(calls, RoleDiscovery.templateAttempts)
+    }
+
+    /// Le résultat vide est ce qui déclenche l'explication et les recours à
+    /// l'écran : il doit se distinguer d'un résultat simplement incomplet.
+    func testOutcomeIsNotEmptyWhenSomethingWasFound() async throws {
+        let transport = FixtureTransport()
+        await transport.enqueue(.post, NotionAPI.Path.search, status: 200,
+                                json: #"{"results":[\#(try Fixture.string("data_source_tasks_valid"))],"has_more":false}"#)
+
+        let outcome = try await RoleDiscovery(client: makeClient(transport))
+            .discoverFromAccessibleSources()
+
+        XCTAssertFalse(outcome.isEmpty)
+    }
+
+    /// Recours de l'écran vide : l'utilisateur doit pouvoir désigner ses bases
+    /// à la main, y compris parmi des sources qu'aucun schéma ne valide — c'est
+    /// précisément le cas où la détection automatique n'a rien pu proposer.
+    func testAllAccessibleSourcesIncludesSourcesThatValidateNoRole() async throws {
+        let transport = FixtureTransport()
+        let results = [try Fixture.string("data_source_tasks_valid"),
+                       try Fixture.string("data_source_time_entries_missing_id")]
+            .joined(separator: ",")
+        await transport.enqueue(.post, NotionAPI.Path.search, status: 200,
+                                json: #"{"results":[\#(results)],"has_more":false}"#)
+
+        let sources = try await RoleDiscovery(client: makeClient(transport)).allAccessibleSources()
+
+        XCTAssertEqual(sources.count, 2, "aucune source n'est masquée par la validation")
+        XCTAssertTrue(sources.contains { $0.id == "ds-time-entries-incomplete" },
+                      "une source au schéma incomplet reste proposable au choix manuel")
+    }
+
+    // MARK: - Template réellement publié
+
+    /// Reproduction exacte du parcours observé en production, qui produisait
+    /// `assignés[] ambigus[projects×3]` : les trois sources du template diffusé,
+    /// découvertes par la recherche générale. Les trois rôles doivent tomber
+    /// juste, sans aucune intervention.
+    func testPublishedTemplateAssignsAllThreeRolesThroughSearch() async throws {
+        let transport = FixtureTransport()
+        let results = [try Fixture.string("data_source_published_template_time_tracker"),
+                       try Fixture.string("data_source_published_template_tasks"),
+                       try Fixture.string("data_source_published_template_projects")]
+            .joined(separator: ",")
+        await transport.enqueue(.post, NotionAPI.Path.search, status: 200,
+                                json: #"{"results":[\#(results)],"has_more":false}"#)
+
+        let outcome = try await RoleDiscovery(client: makeClient(transport))
+            .discoverFromAccessibleSources()
+
+        XCTAssertEqual(outcome.assigned[.timeEntries]?.dataSourceID, "ds-tpl-time-tracker")
+        XCTAssertEqual(outcome.assigned[.tasks]?.dataSourceID, "ds-tpl-tasks")
+        XCTAssertEqual(outcome.assigned[.projects]?.dataSourceID, "ds-tpl-projects")
+        XCTAssertTrue(outcome.unresolved.isEmpty,
+                      "plus aucune ambiguïté : obtenu \(outcome.unresolved)")
+    }
+
     func testVersionHeaderIsAlwaysSent() async throws {
         let transport = FixtureTransport()
         await transport.enqueue(.post, NotionAPI.Path.search, status: 200,

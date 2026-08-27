@@ -113,3 +113,73 @@ final class SchemaValidatorTests: XCTestCase {
         XCTAssertEqual(result.propertyMap[.taskStatus]?.name, "Statut", "le nom affiché est rafraîchi")
     }
 }
+
+/// Confrontation du schéma attendu au template Notion **réellement publié**.
+///
+/// Ces tests sont nés du diagnostic de l'écran « assignés[] ambigus[projects×3] »
+/// observé en production : le validateur ne reconnaissait ni Time Entries ni
+/// Tâches — leurs noms de propriétés ne sont pas ceux de la documentation — et
+/// les trois sources se rabattaient sur le seul rôle Projets, qui n'exige qu'un
+/// titre. Ils verrouillent désormais la reconnaissance du template tel qu'il est
+/// diffusé, noms réels compris.
+final class PublishedTemplateSchemaTests: XCTestCase {
+
+    private func map(_ fixture: String, as role: DatabaseRole) throws -> [PropertyKey: PropertyRef] {
+        let source = try Fixture.decode(NotionDataSource.self, fixture)
+        let validation = SchemaValidator().validate(source, as: role)
+        guard case .valid(let map) = validation else {
+            throw XCTSkip("attendu valide, obtenu : \(validation)")
+        }
+        return map
+    }
+
+    /// Les neuf propriétés, sous leurs noms réels — dont « Status » en type
+    /// `status` (et non `select`) et deux dates que seul leur libellé distingue.
+    func testPublishedTimeTrackerIsRecognised() throws {
+        let map = try map("data_source_published_template_time_tracker", as: .timeEntries)
+
+        XCTAssertEqual(map[.entryTitle]?.name, "Name")
+        XCTAssertEqual(map[.entryTask]?.name, "Tâches")
+        XCTAssertEqual(map[.entryStart]?.name, "Date de début")
+        XCTAssertEqual(map[.entryEnd]?.name, "Date de fin")
+        XCTAssertEqual(map[.entryDuration]?.name, "Durée en min")
+        XCTAssertEqual(map[.entryType]?.name, "Méthode")
+        XCTAssertEqual(map[.entryStatus]?.name, "Status")
+        XCTAssertEqual(map[.entryStatus]?.type, "status", "le type `status` est accepté")
+        XCTAssertEqual(map[.entryPerson]?.name, "Responsable")
+        XCTAssertEqual(map[.entryLocalID]?.name, "ID")
+    }
+
+    /// Le piège de cette base : « Status » (status) et « Type » (select) sont
+    /// tous deux éligibles au statut. Le fragment de nom tranche.
+    func testPublishedTasksIsRecognised() throws {
+        let map = try map("data_source_published_template_tasks", as: .tasks)
+
+        XCTAssertEqual(map[.taskTitle]?.name, "Name")
+        XCTAssertEqual(map[.taskStatus]?.name, "Status")
+        XCTAssertEqual(map[.taskAssignee]?.name, "Responsable")
+        XCTAssertEqual(map[.taskProject]?.name, "Projets",
+                       "« Projets » l'emporte sur « Time Tracker », deux relations")
+    }
+
+    /// Début et fin ne doivent jamais être interverties : une entrée finissant
+    /// avant de commencer produirait une durée négative dans Notion.
+    func testStartAndEndAreNotSwapped() throws {
+        let map = try map("data_source_published_template_time_tracker", as: .timeEntries)
+
+        XCTAssertNotEqual(map[.entryStart]?.id, map[.entryEnd]?.id)
+        XCTAssertEqual(map[.entryStart]?.id, "p-str")
+        XCTAssertEqual(map[.entryEnd]?.id, "p-end")
+    }
+
+    /// Ces sources satisfont aussi le rôle Projets, qui n'exige qu'un titre :
+    /// c'est l'ordre « rôle le plus contraint d'abord » qui évite qu'elles le
+    /// raflent, pas la validation.
+    func testEveryPublishedSourceStillSatisfiesProjects() throws {
+        for name in ["data_source_published_template_time_tracker",
+                     "data_source_published_template_tasks"] {
+            let source = try Fixture.decode(NotionDataSource.self, name)
+            XCTAssertTrue(SchemaValidator().validate(source, as: .projects).isValid, name)
+        }
+    }
+}

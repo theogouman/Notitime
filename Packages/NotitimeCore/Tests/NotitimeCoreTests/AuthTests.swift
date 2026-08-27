@@ -35,6 +35,48 @@ final class AuthTests: XCTestCase {
         XCTAssertEqual(state, .connected(workspaceName: "Équipe", ownerName: "Théo"))
     }
 
+    // MARK: - Refus du trousseau
+
+    /// L'utilisateur refuse la demande d'accès au trousseau : l'erreur remonte
+    /// pour être expliquée, mais la connexion **n'est pas perdue** — ni les
+    /// tokens effacés, ni l'état basculé en « reconnexion nécessaire ».
+    /// Sans quoi un simple clic sur « Refuser » obligerait à refaire tout l'OAuth.
+    func testKeychainRefusalDoesNotDropTheConnection() async throws {
+        let transport = FixtureTransport()
+        let tokens = RefusingTokenStore()
+        let service = ConnectionService(backend: BackendClient(transport: transport), tokens: tokens)
+
+        do {
+            _ = try await service.refreshAccessToken()
+            XCTFail("le refus du trousseau doit remonter")
+        } catch is RefusingTokenStore.Refused {
+            // attendu
+        }
+
+        let state = await service.state
+        XCTAssertNotEqual(state, .needsReconnection,
+                          "un refus du trousseau n'est pas une révocation Notion")
+        let cleared = await tokens.clearCount
+        XCTAssertEqual(cleared, 0, "les tokens ne sont jamais effacés sur un refus")
+    }
+
+    /// Même chose à la lecture du jeton porteur : l'appel échoue, la session tient.
+    func testKeychainRefusalOnBearerTokenIsNotADisconnection() async throws {
+        let transport = FixtureTransport()
+        let tokens = RefusingTokenStore()
+        let service = ConnectionService(backend: BackendClient(transport: transport), tokens: tokens)
+
+        do {
+            _ = try await service.bearerToken()
+            XCTFail("le refus du trousseau doit remonter")
+        } catch is RefusingTokenStore.Refused {
+            // attendu
+        }
+
+        let cleared = await tokens.clearCount
+        XCTAssertEqual(cleared, 0)
+    }
+
     func testConnectRefusesAnAuthorizationWithoutRefreshToken() async throws {
         let transport = FixtureTransport()
         await transport.enqueue(.post, BackendClient.Path.token, status: 200,

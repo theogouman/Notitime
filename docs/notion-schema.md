@@ -29,11 +29,37 @@ C'est ce qui permet à un second membre de l'équipe de partager la page du temp
 existant et d'obtenir une configuration valide sans saisir aucun identifiant
 (SC-007), et à l'équipe de renommer une base sans rien casser.
 
-Les trois bases peuvent être imbriquées dans la page parente — colonnes, bascule, encart : la découverte traverse ces conteneurs jusqu'à cinq niveaux. Elle ne suit pas les pages enfants et ne descend pas dans les bases.
+Les trois bases peuvent être imbriquées dans la page parente — colonnes, bascule, encart, **sous-page** : la découverte traverse ces conteneurs jusqu'à cinq niveaux. Le template diffusé range précisément ses bases dans une sous-page « Template ». La descente ne s'arrête qu'aux bases elles-mêmes, dont les enfants sont des lignes et non des blocs.
 
 Le rôle le plus contraint est attribué en premier. Une source Time Entries
 satisferait aussi le schéma « Tâches » — un titre et un select suffisent — donc
 l'ordre d'attribution est : Time Entries, puis Tâches, puis Projets.
+
+Cet ordre ne suffit pas seul : dans le template diffusé, la base Projets remplit
+aussi le schéma Tâches (un titre, un statut, une relation). Entre deux sources
+valides pour un même rôle, celle qui le satisfait **le plus complètement**
+l'emporte — le nombre de propriétés du rôle qu'elle sait fournir. L'utilisateur
+n'est sollicité qu'à égalité stricte, là où il y a vraiment de quoi hésiter.
+
+### Correspondance des noms de propriétés
+
+La reconnaissance filtre d'abord **par type**. Le nom ne sert qu'à départager
+plusieurs propriétés du même type, dans cet ordre :
+
+1. nom exact ;
+2. nom exact, casse et accents ignorés ;
+3. **fragment de nom** parmi une liste d'indices — « Date de début » répond à
+   `début`, « Status » à `status` ;
+4. candidat unique du bon type ;
+5. candidat unique du type **le plus attendu** — un `status` l'emporte sur un
+   `select` pour un statut.
+
+Chercher un fragment plutôt qu'un nom exact est ce qui permet de reconnaître le
+template diffusé, dont les propriétés s'appellent « Name », « Status »,
+« Date de début », « Date de fin », « Durée en min », « Méthode » et
+« Responsable ». La colonne « Nom par défaut » des tableaux ci-dessous reste le
+nom **créé** par l'application quand elle ajoute une propriété manquante ; ce
+n'est pas une condition de reconnaissance.
 
 ## Rôle Tâches — lu seulement
 
@@ -63,7 +89,7 @@ pas dans la reconnaissance : seul le schéma compte.
 | `entryEnd` | Fin | `date` | oui | UTC |
 | `entryDuration` | Durée | `number` | oui | Minutes entières |
 | `entryType` | Type | `select` | oui | `Pomodoro`, `Tracker` |
-| `entryStatus` | Statut | `select` | oui | `Complété`, `Écourté` |
+| `entryStatus` | Statut | `status` ou `select` | oui | `Complété`, `Écourté` |
 | `entryPerson` | Personne | `people` | oui | Utilisateur courant |
 | `entryLocalID` | **ID** | **`rich_text`** | oui | Idempotence (FR-028) |
 

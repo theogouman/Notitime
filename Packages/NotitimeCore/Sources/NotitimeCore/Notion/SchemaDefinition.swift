@@ -17,11 +17,32 @@ public enum PropertyKey: String, Codable, Sendable, CaseIterable {
 public struct RequiredProperty: Sendable, Equatable {
     public let key: PropertyKey
     public let defaultName: String
+    /// Fragments recherchés dans le nom d'une propriété, par ordre de préférence.
+    ///
+    /// La reconnaissance par **nom exact** ne survit pas au premier template
+    /// réel : « Statut » y devient « Status », « Début » devient « Date de
+    /// début ». Chercher un fragment, insensible à la casse et aux accents,
+    /// reconnaît les deux sans coder de nom en dur — et reste un simple
+    /// départage entre propriétés déjà filtrées **par type**.
+    public let nameHints: [String]
+    /// Types acceptés, **par ordre de préférence** : c'est le premier qui
+    /// départage quand plusieurs propriétés conviennent et qu'aucun nom ne parle.
     public let acceptedTypes: [NotionPropertyType]
     public let isRequired: Bool
     /// `nil` quand la propriété ne peut pas être créée par l'application
     /// (un `title` existe toujours ; une relation exige la source cible).
     public let creationType: NotionPropertyType?
+
+    public init(key: PropertyKey, defaultName: String, nameHints: [String] = [],
+                acceptedTypes: [NotionPropertyType], isRequired: Bool,
+                creationType: NotionPropertyType?) {
+        self.key = key
+        self.defaultName = defaultName
+        self.nameHints = nameHints
+        self.acceptedTypes = acceptedTypes
+        self.isRequired = isRequired
+        self.creationType = creationType
+    }
 
     public var displayName: String { defaultName }
 }
@@ -40,41 +61,60 @@ public enum SchemaDefinition {
 
     static let tasks: [RequiredProperty] = [
         RequiredProperty(key: .taskTitle, defaultName: "Nom",
+                         nameHints: ["nom", "name", "titre", "title", "tâche", "task"],
                          acceptedTypes: [.title], isRequired: true, creationType: nil),
         RequiredProperty(key: .taskStatus, defaultName: "Statut",
+                         nameHints: ["statut", "status", "état", "etat", "state"],
                          acceptedTypes: [.status, .select], isRequired: true, creationType: .select),
         RequiredProperty(key: .taskAssignee, defaultName: "Personne",
+                         nameHints: ["personne", "responsable", "assign", "owner", "person"],
                          acceptedTypes: [.people], isRequired: false, creationType: .people),
         RequiredProperty(key: .taskProject, defaultName: "Projet",
+                         nameHints: ["projet", "project"],
                          acceptedTypes: [.relation], isRequired: false, creationType: nil)
     ]
 
     static let timeEntries: [RequiredProperty] = [
         RequiredProperty(key: .entryTitle, defaultName: "Nom",
+                         nameHints: ["nom", "name", "titre", "title"],
                          acceptedTypes: [.title], isRequired: true, creationType: nil),
         RequiredProperty(key: .entryTask, defaultName: "Tâche",
+                         nameHints: ["tâche", "tache", "task"],
                          acceptedTypes: [.relation], isRequired: true, creationType: nil),
         RequiredProperty(key: .entryStart, defaultName: "Début",
+                         nameHints: ["début", "debut", "start", "démarrage", "demarrage"],
                          acceptedTypes: [.date], isRequired: true, creationType: .date),
         RequiredProperty(key: .entryEnd, defaultName: "Fin",
+                         nameHints: ["fin", "end", "arrêt", "arret"],
                          acceptedTypes: [.date], isRequired: true, creationType: .date),
         RequiredProperty(key: .entryDuration, defaultName: "Durée",
+                         nameHints: ["durée", "duree", "duration", "temps", "minutes"],
                          acceptedTypes: [.number], isRequired: true, creationType: .number),
+        // « Méthode » dans le template publié : c'est le mode de session
+        // (Pomodoro / Tracker), pas un type de contenu.
         RequiredProperty(key: .entryType, defaultName: "Type",
+                         nameHints: ["type", "méthode", "methode", "mode"],
                          acceptedTypes: [.select], isRequired: true, creationType: .select),
+        // `status` d'abord : c'est ce que produit le template, et `taskStatus`
+        // l'acceptait déjà — ne l'accepter ici que sous forme de `select` était
+        // une incohérence, pas une exigence.
         RequiredProperty(key: .entryStatus, defaultName: "Statut",
-                         acceptedTypes: [.select], isRequired: true, creationType: .select),
+                         nameHints: ["statut", "status", "état", "etat", "state"],
+                         acceptedTypes: [.status, .select], isRequired: true, creationType: .select),
         RequiredProperty(key: .entryPerson, defaultName: "Personne",
+                         nameHints: ["personne", "responsable", "assign", "owner", "person"],
                          acceptedTypes: [.people], isRequired: true, creationType: .people),
         // Type rich text obligatoire : la valeur est générée par l'application
         // AVANT l'envoi. Une formule ou l'identifiant auto-incrémenté de Notion
         // n'existent qu'après création — trop tard pour dédupliquer (FR-028).
         RequiredProperty(key: .entryLocalID, defaultName: NotionAPI.defaultLocalIDPropertyName,
+                         nameHints: ["id", "identifiant", "clé", "cle", "key"],
                          acceptedTypes: [.richText], isRequired: true, creationType: .richText)
     ]
 
     static let projects: [RequiredProperty] = [
         RequiredProperty(key: .projectTitle, defaultName: "Nom",
+                         nameHints: ["nom", "name", "titre", "title", "projet", "project"],
                          acceptedTypes: [.title], isRequired: true, creationType: nil)
     ]
 

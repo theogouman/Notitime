@@ -14,6 +14,12 @@ final class OnboardingModel: ObservableObject {
         case ready
         /// Des rôles restent à assigner, ou une base porte plusieurs sources.
         case needsAssignment
+        /// La détection n'a rien remonté du tout. Distinct de `needsAssignment` :
+        /// il n'y a rien à proposer, l'écran doit expliquer et offrir un recours
+        /// plutôt que de laisser l'utilisateur sans issue (FR-015a).
+        case nothingFound
+        /// L'utilisateur désigne lui-même ses bases parmi les sources accessibles.
+        case manualSelection
         case failed(String)
     }
 
@@ -23,12 +29,44 @@ final class OnboardingModel: ObservableObject {
     @Published private(set) var ownerName: String = ""
     /// Propriétés manquantes par rôle, avec ce que l'app sait créer (FR-006).
     @Published private(set) var missingByRole: [DatabaseRole: [PropertyKey]] = [:]
+    /// Sources proposées à la désignation manuelle, sans filtre de schéma.
+    @Published private(set) var accessibleSources: [AccessibleSource] = []
+    /// Ce qui a échoué, en clair, pour l'écran « rien trouvé ».
+    @Published private(set) var emptyReason: String = ""
+    /// Rôles liés et nom de leur source.
+    ///
+    /// Publié, et non recalculé à la demande depuis SwiftData : une assignation
+    /// qui ne change pas l'étape ne provoquait alors aucun redessin, et l'écran
+    /// restait identique alors que la liaison avait bien été enregistrée.
+    @Published private(set) var bindings: [DatabaseRole: String] = [:]
 
     private let environment: AppEnvironment
     private let flow = OAuthFlow()
+    /// Conservé pour pouvoir relancer la détection sans refaire tout l'OAuth :
+    /// une duplication lente est la première cause d'une détection vide.
+    private var templateID: String?
 
     init(environment: AppEnvironment) {
         self.environment = environment
+    }
+
+    /// Vrai quand la configuration permet de travailler.
+    var isConfigured: Bool {
+        !workspaceName.isEmpty || !boundRoles.isEmpty ? requiredRolesAreBound : false
+    }
+
+    /// Rétablit ce que la persistance sait déjà, pour ne pas proposer de
+    /// reconnecter un workspace déjà relié à chaque lancement.
+    func restoreFromPersistence() {
+        let context = environment.container.mainContext
+        guard let connection = try? context.fetch(FetchDescriptor<NotionConnection>()).first
+        else { return }
+
+        workspaceName = connection.workspaceName
+        ownerName = connection.ownerName
+        templateID = connection.duplicatedTemplateID
+        reloadBindings()
+        step = requiredRolesAreBound ? .ready : .disconnected
     }
 
     // MARK: - Connexion
@@ -43,13 +81,15 @@ final class OnboardingModel: ObservableObject {
             workspaceName = authorization.workspaceName ?? ""
             ownerName = authorization.owner?.user?.name ?? ""
             persist(authorization)
-            await discover(templateID: authorization.duplicatedTemplateID)
+            // La page du template reste la meilleure piste même quand cette
+            // autorisation-ci ne la mentionne pas : on repart de ce qu'on sait.
+            await discover(templateID: authorization.duplicatedTemplateID ?? templateID)
         } catch OAuthFlow.FlowError.userCancelled {
             // US1.4 : une annulation n'est pas une erreur technique. On revient
             // simplement à l'état déconnecté, sans message alarmant.
             step = .disconnected
         } catch {
-            step = .failed(error.localizedDescription)
+            step = .failed(describe(error))
         }
     }
 
@@ -59,18 +99,20 @@ final class OnboardingModel: ObservableObject {
             step = .disconnected
             outcome = nil
         } catch {
-            step = .failed(error.localizedDescription)
+            step = .failed(describe(error))
         }
     }
 
     // MARK: - Découverte
 
     private func discover(templateID: String?) async {
+        self.templateID = templateID
         step = .discovering
-        let discovery = RoleDiscovery(client: environment.notion)
+        let discovery = makeDiscovery()
         do {
+            let usedTemplate = !(templateID ?? "").isEmpty
             let result: DiscoveryOutcome
-            if let templateID, !templateID.isEmpty {
+            if usedTemplate, let templateID {
                 // FR-004 : le template dupliqué se découvre tout seul.
                 result = try await discovery.discoverFromTemplate(pageID: templateID)
             } else {
@@ -79,17 +121,70 @@ final class OnboardingModel: ObservableObject {
             }
             outcome = result
             persist(result)
+            await logOutcome(result)
+
+            guard !result.isEmpty else {
+                // Ne jamais afficher un écran d'assignation sans rien à assigner :
+                // l'utilisateur n'y comprendrait rien et n'aurait aucun recours.
+                emptyReason = usedTemplate
+                    ? "Notitime n'a trouvé aucune base dans la page dupliquée. "
+                    + "La copie effectuée par Notion est peut-être encore en cours, "
+                    + "ou les bases ont été déplacées hors de cette page."
+                    : "Notitime n'a trouvé aucune base parmi les pages partagées avec "
+                    + "l'intégration. Il faut lui donner accès à vos bases dans Notion, "
+                    + "ou les désigner vous-même."
+                step = .nothingFound
+                return
+            }
+
             let complete = result.assigned[.tasks] != nil
                 && result.assigned[.timeEntries] != nil
                 && result.sourceChoices.isEmpty
             step = complete ? .ready : .needsAssignment
         } catch {
-            step = .failed(error.localizedDescription)
+            step = .failed(describe(error))
+        }
+    }
+
+    /// Trace le détail de la découverte, rôle par rôle.
+    ///
+    /// C'est ce qui manquait pour comprendre un écran d'assignation inattendu :
+    /// savoir ce qui a été assigné, ce qui est resté ambigu, et avec combien de
+    /// candidats — sans quoi on ne peut que supposer.
+    private func logOutcome(_ result: DiscoveryOutcome) async {
+        let assigned = result.assigned
+            .map { "\($0.key.rawValue)=\($0.value.dataSourceID)" }
+            .sorted().joined(separator: " ")
+        let unresolved = result.unresolved
+            .map { "\($0.key.rawValue)×\($0.value.count)" }
+            .sorted().joined(separator: " ")
+        await environment.log.log(.sync, "découverte assignés[\(assigned)] "
+                                  + "ambigus[\(unresolved)] choixDeSource=\(result.sourceChoices.count)")
+    }
+
+    private func makeDiscovery() -> RoleDiscovery {
+        RoleDiscovery(client: environment.notion, time: environment.time, log: environment.log)
+    }
+
+    /// Relance la détection sans refaire l'OAuth (recours 1 de l'écran vide).
+    func retryDiscovery() async {
+        await discover(templateID: templateID)
+    }
+
+    /// Bascule vers la désignation manuelle (recours 2 de l'écran vide).
+    func browseAccessibleSources() async {
+        step = .discovering
+        do {
+            accessibleSources = try await makeDiscovery().allAccessibleSources()
+            step = .manualSelection
+        } catch {
+            step = .failed(describe(error))
         }
     }
 
     /// Assignation manuelle d'une source à un rôle (FR-005, FR-006a).
     func assign(dataSourceID: String, databaseID: String?, name: String, to role: DatabaseRole) async {
+        await environment.log.log(.sync, "assignation demandée rôle=\(role.rawValue) source=\(dataSourceID)")
         do {
             let source = try await environment.notion.retrieveDataSource(id: dataSourceID)
             let validation = SchemaValidator().validate(source, as: role)
@@ -98,15 +193,23 @@ final class OnboardingModel: ObservableObject {
                 missingByRole[role] = nil
                 save(role: role, source: source, name: name,
                      databaseID: databaseID ?? source.databaseID, map: map)
-                step = .ready
+                await environment.log.log(.sync, "assignation réussie rôle=\(role.rawValue) "
+                                          + "propriétés=\(map.count) liés=\(boundRoles.count)")
+                // Un rôle lié ne signifie pas la configuration terminée : lier
+                // Tâches puis basculer en « connecté » laisserait Time Entries
+                // sans source, et la première session n'aurait nulle part où aller.
+                step = requiredRolesAreBound ? .ready : stepForPendingAssignment()
             case .missing(let missing, _, _):
                 // FR-006 : la configuration est refusée tant que le schéma n'est
                 // pas valide ; on affiche ce qui manque et on propose de créer.
                 missingByRole[role] = missing
-                step = .needsAssignment
+                await environment.log.log(.sync, "assignation refusée rôle=\(role.rawValue) "
+                                          + "manquantes=[\(missing.map(\.rawValue).joined(separator: " "))]")
+                step = stepForPendingAssignment()
             }
         } catch {
-            step = .failed(error.localizedDescription)
+            await environment.log.log(.error, "assignation en échec rôle=\(role.rawValue) : \(error)")
+            step = .failed(describe(error))
         }
     }
 
@@ -118,14 +221,62 @@ final class OnboardingModel: ObservableObject {
             try await environment.notion.addProperties(payload, toDataSource: dataSourceID)
             await assign(dataSourceID: dataSourceID, databaseID: nil, name: "", to: role)
         } catch {
-            step = .failed(error.localizedDescription)
+            step = .failed(describe(error))
         }
+    }
+
+    /// Message d'erreur complet : la suggestion de récupération porte souvent
+    /// l'essentiel — c'est elle qui dit à l'utilisateur quoi faire du refus de
+    /// trousseau qu'il vient d'opposer à macOS.
+    private func describe(_ error: Error) -> String {
+        let description = error.localizedDescription
+        guard let recovery = (error as? LocalizedError)?.recoverySuggestion else {
+            return description
+        }
+        return description + "\n\n" + recovery
+    }
+
+    // MARK: - Rôles liés
+
+    /// Rôles effectivement liés à une source.
+    var boundRoles: Set<DatabaseRole> { Set(bindings.keys) }
+
+    /// Relit les liaisons persistées et republie l'état.
+    private func reloadBindings() {
+        let stored = (try? environment.container.mainContext
+            .fetch(FetchDescriptor<DatabaseBinding>())) ?? []
+        bindings = Dictionary(
+            stored.compactMap { binding in
+                DatabaseRole(rawValue: binding.roleRaw).map { ($0, binding.dataSourceName) }
+            },
+            uniquingKeysWith: { first, _ in first }
+        )
+    }
+
+    /// Tâches et Time Entries suffisent à démarrer une session ; Projets est
+    /// facultatif — une entrée sans projet reste valide (data-model §2).
+    private var requiredRolesAreBound: Bool {
+        boundRoles.contains(.tasks) && boundRoles.contains(.timeEntries)
+    }
+
+    /// Reste sur l'écran d'où vient l'utilisateur plutôt que de le renvoyer
+    /// ailleurs au milieu d'une désignation.
+    private func stepForPendingAssignment() -> Step {
+        step == .manualSelection ? .manualSelection : .needsAssignment
     }
 
     // MARK: - Persistance
 
     private func persist(_ authorization: NotionAuthorization) {
         let context = environment.container.mainContext
+
+        // Notion ne renvoie `duplicated_template_id` **qu'à la duplication
+        // effective**. Aux autorisations suivantes il est absent, et l'écraser
+        // reviendrait à oublier définitivement la page du template : la
+        // découverte retomberait à jamais sur la recherche générale, moins sûre.
+        let knownTemplateID = try? context.fetch(FetchDescriptor<NotionConnection>())
+            .first?.duplicatedTemplateID
+
         try? context.delete(model: NotionConnection.self)
         context.insert(NotionConnection(
             workspaceID: authorization.workspaceID,
@@ -134,13 +285,15 @@ final class OnboardingModel: ObservableObject {
             botID: authorization.botID,
             ownerUserID: authorization.owner?.user?.id ?? "",
             ownerName: authorization.owner?.user?.name ?? "",
-            duplicatedTemplateID: authorization.duplicatedTemplateID,
+            duplicatedTemplateID: authorization.duplicatedTemplateID
+                ?? knownTemplateID.flatMap { $0 },
             connectedAt: Date()
         ))
         try? context.save()
     }
 
     private func persist(_ result: DiscoveryOutcome) {
+        defer { reloadBindings() }
         for (role, candidate) in result.assigned {
             save(role: role,
                  dataSourceID: candidate.dataSourceID,
@@ -175,5 +328,6 @@ final class OnboardingModel: ObservableObject {
                                       lastValidatedAt: Date(), validationState: "valid")
         context.insert(binding)
         try? context.save()
+        reloadBindings()
     }
 }

@@ -90,6 +90,22 @@ actor FixtureTransport: HTTPTransport {
 }
 
 /// Magasin de tokens en mémoire : les tests ne touchent jamais au trousseau.
+/// Trousseau qui refuse tout accès, comme lorsque l'utilisateur ferme la demande
+/// de mot de passe présentée par macOS.
+///
+/// Le bundle n'étant pas signé en v1, son identité de code change à chaque build
+/// et macOS resollicite l'utilisateur : ce refus est un cas courant, pas une
+/// panne exceptionnelle.
+actor RefusingTokenStore: TokenStore {
+    struct Refused: Error {}
+    private(set) var clearCount = 0
+
+    func accessToken() async throws -> String? { throw Refused() }
+    func refreshToken() async throws -> String? { throw Refused() }
+    func store(accessToken: String, refreshToken: String) async throws { throw Refused() }
+    func clear() async throws { clearCount += 1 }
+}
+
 actor InMemoryTokenStore: TokenStore {
     private var access: String?
     private var refresh: String?

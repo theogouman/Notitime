@@ -19,6 +19,10 @@ struct OnboardingView: View {
                 ConnectionStatusView(model: model)
             case .needsAssignment:
                 assignment
+            case .nothingFound:
+                nothingFound
+            case .manualSelection:
+                manualSelection
             case .failed(let message):
                 failure(message)
             }
@@ -48,9 +52,36 @@ struct OnboardingView: View {
         }
     }
 
+    /// État de chaque rôle, toujours visible pendant la configuration.
+    ///
+    /// Sans lui, assigner un rôle qui ne suffit pas à terminer la configuration
+    /// ne produisait aucun changement à l'écran : la liaison était pourtant
+    /// enregistrée, mais rien ne le disait.
+    @ViewBuilder
+    private var roleStatus: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            ForEach([DatabaseRole.tasks, .timeEntries, .projects], id: \.self) { role in
+                HStack(spacing: 6) {
+                    Image(systemName: model.bindings[role] != nil
+                          ? "checkmark.circle.fill" : "circle.dashed")
+                        .foregroundStyle(model.bindings[role] != nil ? .green : .secondary)
+                    Text(roleLabel(role)).font(.caption)
+                    if let source = model.bindings[role] {
+                        Text("— \(source)")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                }
+            }
+        }
+        .padding(.bottom, 4)
+    }
+
     @ViewBuilder
     private var assignment: some View {
         Text("Désigner vos bases").font(.headline)
+        roleStatus
 
         if let outcome = model.outcome {
             // FR-006a : une base à plusieurs sources se tranche explicitement.
@@ -103,6 +134,81 @@ struct OnboardingView: View {
                 }
             }
         }
+    }
+
+    /// FR-015a : un état vide s'explique et propose une action. Sans cela
+    /// l'utilisateur n'a plus qu'à quitter, sans savoir ce qui a échoué.
+    @ViewBuilder
+    private var nothingFound: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Aucune base détectée").font(.headline)
+            Text(model.emptyReason)
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            HStack(spacing: 8) {
+                Button("Réessayer la détection") {
+                    Task { await model.retryDiscovery() }
+                }
+                .buttonStyle(.borderedProminent)
+
+                Button("Choisir mes bases moi-même") {
+                    Task { await model.browseAccessibleSources() }
+                }
+            }
+
+            Text("Si la duplication vient d'avoir lieu, laissez à Notion quelques "
+                 + "secondes puis réessayez.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    /// Désignation manuelle : toutes les sources accessibles, rôle par rôle.
+    @ViewBuilder
+    private var manualSelection: some View {
+        Text("Choisir mes bases").font(.headline)
+        roleStatus
+
+        if model.accessibleSources.isEmpty {
+            // Deuxième impasse possible : ne pas la laisser muette non plus.
+            Text("Aucune source de données n'est partagée avec Notitime. Ouvrez la "
+                 + "page de vos bases dans Notion, puis « Connexions » → Notitime.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Button("Réessayer") { Task { await model.browseAccessibleSources() } }
+        } else {
+            ForEach(rolesToBind, id: \.self) { role in
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(roleLabel(role)).font(.callout).bold()
+                    ForEach(model.accessibleSources) { source in
+                        Button(source.name.isEmpty ? "Sans titre" : source.name) {
+                            Task {
+                                await model.assign(dataSourceID: source.id,
+                                                   databaseID: source.databaseID,
+                                                   name: source.name,
+                                                   to: role)
+                            }
+                        }
+                    }
+                    if let missing = model.missingByRole[role], !missing.isEmpty {
+                        Text("Propriétés manquantes : "
+                             + missing.map(\.rawValue).joined(separator: ", "))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
+        }
+    }
+
+    /// Rôles restant à lier, dans l'ordre où ils comptent pour démarrer.
+    private var rolesToBind: [DatabaseRole] {
+        [.tasks, .timeEntries, .projects].filter { !model.boundRoles.contains($0) }
     }
 
     private func failure(_ message: String) -> some View {
