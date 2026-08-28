@@ -202,7 +202,11 @@ final class SessionController: ObservableObject {
         return (standard + [custom]).sorted()
     }
 
-    /// Dernière méthode lancée, à mettre en avant au prochain choix (SC-002).
+    /// Dernière méthode lancée.
+    ///
+    /// Plus aucune surface ne la met en avant : arriver sur le panneau avec un
+    /// choix déjà fait n'est pas ce qu'on attend d'un panneau de choix. Elle
+    /// reste enregistrée, elle ne décide plus de rien.
     var lastMethod: (mode: SessionMode, minutes: Int?)? {
         guard let raw = storedSettings?.lastMethodRaw,
               let mode = SessionMode(rawValue: raw) else { return nil }

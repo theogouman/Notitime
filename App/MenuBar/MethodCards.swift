@@ -13,6 +13,8 @@ struct MethodCards: View {
     @ObservedObject var controller: SessionController
 
     @State private var hovered: SessionMode?
+    /// Durée survolée, pour la mettre en avant sous le curseur.
+    @State private var hoveredDuration: Int?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private let height: CGFloat = 116
@@ -48,9 +50,12 @@ struct MethodCards: View {
                 .allowsHitTesting(revealsDurations)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(surface(isPromoted: promotes(.pomodoro)))
+        .background(surface())
         .contentShape(Rectangle())
-        .onHover { inside in transition { hovered = inside ? .pomodoro : nil } }
+        .onHover { inside in
+            transition { hovered = inside ? .pomodoro : nil }
+            if !inside { hoveredDuration = nil }
+        }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Pomodoro")
     }
@@ -63,8 +68,8 @@ struct MethodCards: View {
                 Button("\(minutes) min") {
                     Task { await controller.startPomodoro(minutes: minutes) }
                 }
-                .buttonStyle(DurationButtonStyle(isPromoted: promotes(.pomodoro, minutes)))
-                .keyboardShortcut(promotes(.pomodoro, minutes) ? .defaultAction : nil)
+                .buttonStyle(DurationButtonStyle(isHighlighted: hoveredDuration == minutes))
+                .onHover { inside in hoveredDuration = inside ? minutes : nil }
             }
         }
         .padding(.horizontal, 10)
@@ -74,14 +79,13 @@ struct MethodCards: View {
 
     private var tracker: some View {
         Button { Task { await controller.startTracker() } } label: {
-            face(icon: "clock", title: "Suivi libre")
+            face(icon: "alarm", title: "Suivi libre")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .background(surface(isPromoted: promotes(.tracker), isHovered: hovered == .tracker))
+        .background(surface(isHovered: hovered == .tracker))
         .onHover { inside in transition { hovered = inside ? .tracker : nil } }
-        .keyboardShortcut(promotes(.tracker) ? .defaultAction : nil)
     }
 
     // MARK: - Pièces communes
@@ -96,27 +100,14 @@ struct MethodCards: View {
         }
     }
 
-    /// Fond de carte. Le liseré d'accent marque la dernière méthode employée,
-    /// celle que la touche Entrée lance.
-    private func surface(isPromoted: Bool, isHovered: Bool = false) -> some View {
+    /// Fond de carte.
+    ///
+    /// Aucune méthode n'est mise en avant à l'ouverture du panneau : la
+    /// précédente y restait sélectionnée, ce qui donnait un choix déjà fait
+    /// alors qu'on vient précisément le faire. Seul le survol distingue.
+    private func surface(isHovered: Bool = false) -> some View {
         RoundedRectangle(cornerRadius: 10, style: .continuous)
             .fill(Color.primary.opacity(isHovered ? 0.10 : 0.06))
-            .overlay {
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .strokeBorder(isPromoted ? Color.accentColor.opacity(0.7) : .clear,
-                                  lineWidth: 1.5)
-            }
-    }
-
-    /// La dernière méthode lancée est mise en avant. À défaut d'historique,
-    /// c'est le premier préréglage de Pomodoro qui l'emporte.
-    private func promotes(_ mode: SessionMode, _ minutes: Int? = nil) -> Bool {
-        guard let last = controller.lastMethod else {
-            guard mode == .pomodoro else { return false }
-            return minutes == nil || minutes == controller.pomodoroPresets.first
-        }
-        guard last.mode == mode else { return false }
-        return mode == .tracker || minutes == nil || last.minutes == minutes
     }
 
     private func transition(_ change: @escaping () -> Void) {
@@ -125,10 +116,10 @@ struct MethodCards: View {
     }
 }
 
-/// Une durée de Pomodoro : ligne pleine largeur, mise en avant si c'est la
-/// dernière employée.
+/// Une durée de Pomodoro : ligne pleine largeur, prise par la couleur d'accent
+/// sous le curseur — celle que l'utilisateur a choisie dans ses réglages système.
 struct DurationButtonStyle: ButtonStyle {
-    let isPromoted: Bool
+    let isHighlighted: Bool
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
@@ -139,12 +130,12 @@ struct DurationButtonStyle: ButtonStyle {
                 RoundedRectangle(cornerRadius: 6, style: .continuous)
                     .fill(fill(configuration.isPressed))
             )
-            .foregroundStyle(isPromoted ? Color.white : Color.primary)
+            .foregroundStyle(isHighlighted ? Color.white : Color.primary)
             .contentShape(Rectangle())
     }
 
     private func fill(_ pressed: Bool) -> Color {
-        if isPromoted { return Color.accentColor.opacity(pressed ? 0.7 : 1) }
-        return Color.primary.opacity(pressed ? 0.20 : 0.10)
+        guard isHighlighted else { return Color.primary.opacity(pressed ? 0.20 : 0.10) }
+        return Color.accentColor.opacity(pressed ? 0.7 : 1)
     }
 }

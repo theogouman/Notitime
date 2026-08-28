@@ -15,6 +15,32 @@ enum ConfigurationWindow {
 
     static let id = "notitime.configuration"
 
+    /// La fenêtre, si elle est ouverte.
+    ///
+    /// Sert d'ancre à la demande d'autorisation du navigateur : présentée sans
+    /// ancre valable, macOS la place au petit bonheur — d'où une boîte flottant
+    /// au-dessus de la fenêtre plutôt qu'attachée à elle.
+    @MainActor
+    static func window() -> NSWindow? {
+        NSApp.windows.first { window in
+            window.isVisible
+                && (window.identifier?.rawValue.contains(id) == true
+                    || window.title == "Configuration de Notitime")
+        }
+    }
+
+    /// Attend qu'elle soit à l'écran, au plus une demi-seconde.
+    ///
+    /// Une connexion lancée depuis le menu ouvre la fenêtre puis enchaîne
+    /// aussitôt : sans cette attente, la demande d'autorisation cherche son
+    /// ancre avant que la fenêtre n'existe.
+    @MainActor
+    static func settle() async {
+        for _ in 0..<20 where window() == nil {
+            try? await Task.sleep(for: .milliseconds(25))
+        }
+    }
+
     /// Ouvre la fenêtre et l'amène au premier plan.
     ///
     /// L'application est un agent (`LSUIElement`) : sans activation explicite, sa

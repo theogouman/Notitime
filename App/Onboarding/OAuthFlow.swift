@@ -50,6 +50,9 @@ final class OAuthFlow: NSObject {
         let state = OAuthFlow.state(for: verifier)
         let url = try OAuthFlow.authorizationURL(state: state)
 
+        // La boîte d'autorisation s'ancre à la fenêtre de configuration : on lui
+        // laisse le temps de paraître quand la connexion part du menu.
+        await ConfigurationWindow.settle()
         let callbackURL = try await present(url)
         let callback = try OAuthFlow.parse(callbackURL)
 
@@ -140,7 +143,29 @@ final class OAuthFlow: NSObject {
 }
 
 extension OAuthFlow: ASWebAuthenticationPresentationContextProviding {
+
+    /// Ancre de la demande d'autorisation.
+    ///
+    /// La fenêtre de configuration d'abord, et non simplement « la fenêtre
+    /// active » : quand la connexion part du menu, la fenêtre active est le
+    /// popover, qui se ferme au premier clic ailleurs — la boîte se retrouvait
+    /// attachée à une fenêtre en train de disparaître. Le repli créait une
+    /// `NSWindow` jamais affichée, sans position ni taille : macOS plaçait
+    /// alors la boîte au petit bonheur, flottant par-dessus le reste.
+    ///
+    /// La position exacte reste au système : cette boîte est présentée par
+    /// `AuthenticationServices`, pas par nous, et rien d'exposé ne permet de la
+    /// déplacer. L'ancre décide de la fenêtre à laquelle elle s'attache, pas de
+    /// l'endroit où elle s'y pose.
     func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
-        NSApplication.shared.keyWindow ?? NSWindow()
+        if let configuration = ConfigurationWindow.window() { return configuration }
+        if let key = NSApp.keyWindow, key.isVisible, key.canBecomeMain { return key }
+        if let main = NSApp.mainWindow { return main }
+        // Dernier recours : une fenêtre centrée, pour que la boîte ne se pose
+        // pas dans un coin de l'écran.
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 480, height: 520),
+                              styleMask: [.titled], backing: .buffered, defer: false)
+        window.center()
+        return window
     }
 }

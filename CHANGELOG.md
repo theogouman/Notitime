@@ -60,10 +60,18 @@ Comportements visibles par l'utilisateur, dans l'ordre des livraisons.
 - L'icône du workspace Notion ne surgit plus une fois téléchargée : un squelette
   occupe sa place, bat une fois, puis lui cède par un fondu croisé.
 - Ces trois animations s'effacent quand le système demande moins de mouvement.
+- Aucune méthode n'est présélectionnée à l'ouverture du panneau : la
+  précédente y restait active, ce qui donnait un choix déjà fait alors qu'on
+  vient justement le faire. Les durées de Pomodoro se colorent de la teinte
+  d'accent du système sous le curseur.
+- La demande d'autorisation du navigateur s'attache à la fenêtre de
+  configuration. Elle se posait auparavant au petit bonheur : l'ancre fournie
+  pouvait être le popover du menu, en train de se fermer, ou une fenêtre
+  fantôme jamais affichée.
 - Le choix de la méthode se fait sur deux cartes côte à côte — Pomodoro et
   Suivi libre — sous le titre « Comment veux-tu travailler ? ». Survoler
   Pomodoro fait passer sa carte au second plan et découvre ses trois durées,
-  cliquables sur place.
+  cliquables sur place. Suivi libre porte l'icône du réveil.
 - L'emplacement dans la barre de menus a une largeur fixe : il ne se réajuste
   plus au démarrage et à l'arrêt d'une session.
 - L'anneau bleu du champ de recherche ne traverse plus la transition vers le
