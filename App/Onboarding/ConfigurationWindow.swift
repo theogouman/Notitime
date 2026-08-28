@@ -29,18 +29,6 @@ enum ConfigurationWindow {
         }
     }
 
-    /// Attend qu'elle soit à l'écran, au plus une demi-seconde.
-    ///
-    /// Une connexion lancée depuis le menu ouvre la fenêtre puis enchaîne
-    /// aussitôt : sans cette attente, la demande d'autorisation cherche son
-    /// ancre avant que la fenêtre n'existe.
-    @MainActor
-    static func settle() async {
-        for _ in 0..<20 where window() == nil {
-            try? await Task.sleep(for: .milliseconds(25))
-        }
-    }
-
     /// Ouvre la fenêtre et l'amène au premier plan.
     ///
     /// L'application est un agent (`LSUIElement`) : sans activation explicite, sa

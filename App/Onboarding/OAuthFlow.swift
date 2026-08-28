@@ -52,7 +52,7 @@ final class OAuthFlow: NSObject {
 
         // La boîte d'autorisation s'ancre à la fenêtre de configuration : on lui
         // laisse le temps de paraître quand la connexion part du menu.
-        await ConfigurationWindow.settle()
+        await AppWindows.settle()
         let callbackURL = try await present(url)
         let callback = try OAuthFlow.parse(callbackURL)
 
@@ -146,8 +146,9 @@ extension OAuthFlow: ASWebAuthenticationPresentationContextProviding {
 
     /// Ancre de la demande d'autorisation.
     ///
-    /// La fenêtre de configuration d'abord, et non simplement « la fenêtre
-    /// active » : quand la connexion part du menu, la fenêtre active est le
+    /// Une de nos fenêtres d'abord — accueil ou configuration — et non
+    /// simplement « la fenêtre active » : quand la connexion part du menu,
+    /// la fenêtre active est le
     /// popover, qui se ferme au premier clic ailleurs — la boîte se retrouvait
     /// attachée à une fenêtre en train de disparaître. Le repli créait une
     /// `NSWindow` jamais affichée, sans position ni taille : macOS plaçait
@@ -158,7 +159,7 @@ extension OAuthFlow: ASWebAuthenticationPresentationContextProviding {
     /// déplacer. L'ancre décide de la fenêtre à laquelle elle s'attache, pas de
     /// l'endroit où elle s'y pose.
     func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
-        if let configuration = ConfigurationWindow.window() { return configuration }
+        if let anchor = AppWindows.anchor() { return anchor }
         if let key = NSApp.keyWindow, key.isVisible, key.canBecomeMain { return key }
         if let main = NSApp.mainWindow { return main }
         // Dernier recours : une fenêtre centrée, pour que la boîte ne se pose

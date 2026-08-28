@@ -88,6 +88,12 @@ Comportements visibles par l'utilisateur, dans l'ordre des livraisons.
 
 ### Premier lancement
 
+- Accueil en quatre écrans, dans une fenêtre large et centrée, au tout premier
+  lancement : le récit — texte qui se dépose mot à mot, avatar incrusté dans la
+  phrase, promesses en pastilles —, le template offert et sa grille de
+  présentation, les deux façons de connecter Notion, puis la lecture des bases
+  détectées, changeables sur place. Il ne se joue qu'une fois.
+- Terminer l'accueil ferme la fenêtre et ouvre le menu, tâches déjà chargées.
 - Écran d'accueil : logo de l'application, nom, ce qu'elle fait, et un seul
   bouton — « Connecter mon Notion », portant le logo Notion.
 - Cet écran s'ouvre de lui-même au premier lancement et après une déconnexion :

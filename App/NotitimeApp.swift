@@ -22,6 +22,18 @@ struct NotitimeApp: App {
         }
         .menuBarExtraStyle(.window)
 
+        // Accueil du premier lancement : rectangulaire, centré, et bien plus
+        // large que la fenêtre de configuration — un récit ne se lit pas dans un
+        // formulaire.
+        Window("Bienvenue dans Notitime", id: WelcomeWindow.id) {
+            WelcomeView(state: root)
+                .modelContainer(root.containerOrEmpty)
+        }
+        .defaultSize(width: WelcomeWindow.size.width, height: WelcomeWindow.size.height)
+        .defaultPosition(.center)
+        .windowResizability(.contentSize)
+        .windowStyle(.hiddenTitleBar)
+
         // Fenêtre à la demande : elle n'existe que si l'utilisateur l'ouvre, ce
         // que le principe I autorise — il ne proscrit qu'une fenêtre permanente.
         Window("Configuration de Notitime", id: ConfigurationWindow.id) {
@@ -124,6 +136,28 @@ final class RootState: ObservableObject {
 
     /// Une seule lecture de la situation pour toutes les surfaces.
     var readiness: AppReadiness { onboarding?.readiness ?? .needsConnection }
+
+    /// L'accueil du premier lancement reste à voir.
+    ///
+    /// Une seule fois : se déconnecter plus tard ramène à l'écran de connexion,
+    /// pas au récit — on ne raconte pas deux fois la même histoire à quelqu'un
+    /// qui a déjà installé l'application.
+    var showsWelcome: Bool {
+        readiness == .needsConnection && storedSettings?.welcomeCompletedAt == nil
+    }
+
+    func completeWelcome() {
+        guard let environment, let settings = storedSettings else { return }
+        settings.welcomeCompletedAt = Date()
+        try? environment.container.mainContext.save()
+        objectWillChange.send()
+    }
+
+    private var storedSettings: AppSettings? {
+        guard let environment else { return nil }
+        return try? environment.container.mainContext
+            .fetch(FetchDescriptor<AppSettings>()).first
+    }
 
     /// Cas limite « quitter l'app volontairement » : une session en cours suit
     /// la règle de son mode. On ne quitte jamais en perdant du temps travaillé.
@@ -301,10 +335,16 @@ struct MenuBarLabel: View {
         .accessibilityLabel(accessibilityLabel)
         .onAppear {
             // Premier lancement ou déconnexion : il n'y a rien à faire dans le
-            // menu tant que Notion n'est pas connecté, autant amener l'accueil.
+            // menu tant que Notion n'est pas connecté, autant ouvrir une
+            // fenêtre. L'accueil au tout premier lancement, la configuration
+            // ensuite — le récit ne sert qu'une fois.
             if !state.isConfigured, !state.hasPresentedOnboarding {
                 state.hasPresentedOnboarding = true
-                ConfigurationWindow.present(openWindow)
+                if state.showsWelcome {
+                    WelcomeWindow.present(openWindow)
+                } else {
+                    ConfigurationWindow.present(openWindow)
+                }
             }
 
             guard contextMenu == nil else { return }
