@@ -136,6 +136,11 @@ final class SessionController: ObservableObject {
                                                 settings: filters,
                                                 log: environment.log)
             self.cache = cache
+            // La liaison peut avoir changé depuis la construction du cache :
+            // réglages, reconnexion, revalidation. Sans ce rappel, le cache
+            // interrogeait l'ancienne base jusqu'à la fin du processus.
+            await cache.rebind(dataSourceID: binding.dataSourceID,
+                               mapper: PropertyMapper(map: binding.propertyRefs))
             await cache.update(settings: filters)
             try await cache.refresh()
 

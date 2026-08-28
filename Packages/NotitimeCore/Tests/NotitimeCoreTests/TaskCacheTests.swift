@@ -244,3 +244,88 @@ final class TaskCacheTests: XCTestCase {
         XCTAssertEqual(syncedAt, stillSyncedAt, "la date de dernière réussite ne bouge pas")
     }
 }
+
+/// Un cache de tâches n'est valable que pour la base qui l'a bâti.
+///
+/// Le défaut : le cache était construit au premier chargement, puis réutilisé
+/// jusqu'à la fin du processus. Changer la base Tâches — depuis les réglages,
+/// par une reconnexion ou par une revalidation — n'atteignait jamais le cache,
+/// qui continuait d'interroger l'ancienne source. Aucune erreur, aucune tâche,
+/// et une liaison pourtant correcte en base : rien ne permettait de voir que la
+/// question était posée à la mauvaise base.
+final class TaskCacheRebindTests: XCTestCase {
+
+    private let map: [PropertyKey: PropertyRef] = [
+        .taskTitle: PropertyRef(id: "title", name: "Name", type: "title")
+    ]
+
+    private func page(_ id: String, _ title: String) -> String {
+        #"""
+        {"object":"page","id":"\#(id)","properties":{
+          "Name":{"id":"title","type":"title","title":[{"plain_text":"\#(title)"}]}}}
+        """#.replacingOccurrences(of: "\n", with: "")
+    }
+
+    private func cache(_ transport: FixtureTransport, source: String) -> TaskCache {
+        TaskCache(client: NotionClient(transport: transport,
+                                       authorization: StaticAuthorization(),
+                                       rateLimiter: .forTesting(VirtualTimeSource())),
+                  mapper: PropertyMapper(map: map),
+                  dataSourceID: source)
+    }
+
+    func testRebindingChangesTheSourceQueried() async throws {
+        let transport = FixtureTransport()
+        await transport.enqueue(.post, NotionAPI.Path.queryDataSource("ds-ancienne"), status: 200,
+                                json: #"{"results":[\#(page("t-1", "Ancienne"))],"has_more":false}"#)
+        await transport.enqueue(.post, NotionAPI.Path.queryDataSource("ds-nouvelle"), status: 200,
+                                json: #"{"results":[\#(page("t-2", "Nouvelle"))],"has_more":false}"#)
+
+        let cache = cache(transport, source: "ds-ancienne")
+        try await cache.refresh()
+        let first = await cache.tasks
+        XCTAssertEqual(first.map(\.title), ["Ancienne"])
+
+        await cache.rebind(dataSourceID: "ds-nouvelle", mapper: PropertyMapper(map: map))
+        try await cache.refresh()
+
+        let reloaded = await cache.tasks
+        XCTAssertEqual(reloaded.map(\.title), ["Nouvelle"])
+        let count = await transport.requestCount(.post, NotionAPI.Path.queryDataSource("ds-nouvelle"))
+        XCTAssertEqual(count, 1, "la seconde lecture doit viser la nouvelle base")
+    }
+
+    /// Les tâches de l'ancienne base disparaissent immédiatement : les garder
+    /// afficherait des tâches qui n'existent pas dans celle qu'on vient de lier.
+    func testRebindingEmptiesWhatCameFromTheFormerSource() async throws {
+        let transport = FixtureTransport()
+        await transport.enqueue(.post, NotionAPI.Path.queryDataSource("ds-ancienne"), status: 200,
+                                json: #"{"results":[\#(page("t-1", "Ancienne"))],"has_more":false}"#)
+
+        let cache = cache(transport, source: "ds-ancienne")
+        try await cache.refresh()
+        await cache.rebind(dataSourceID: "ds-nouvelle", mapper: PropertyMapper(map: map))
+
+        let remaining = await cache.tasks
+        XCTAssertTrue(remaining.isEmpty)
+        let stamp = await cache.lastSuccessfulSync
+        XCTAssertNil(stamp, "la dernière synchronisation ne concernait pas cette base")
+    }
+
+    /// Relier la même base ne doit rien effacer : le rafraîchissement passe par
+    /// là à chaque chargement, et viderait la liste à chaque fois.
+    func testRebindingToTheSameSourceKeepsEverything() async throws {
+        let transport = FixtureTransport()
+        await transport.enqueue(.post, NotionAPI.Path.queryDataSource("ds-a"), status: 200,
+                                json: #"{"results":[\#(page("t-1", "Une"))],"has_more":false}"#)
+
+        let cache = cache(transport, source: "ds-a")
+        try await cache.refresh()
+        await cache.rebind(dataSourceID: "ds-a", mapper: PropertyMapper(map: map))
+
+        let kept = await cache.tasks
+        XCTAssertEqual(kept.map(\.title), ["Une"])
+        let synced = await cache.lastSuccessfulSync
+        XCTAssertNotNil(synced)
+    }
+}

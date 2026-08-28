@@ -38,8 +38,8 @@ public struct CachedTaskItem: Sendable, Equatable, Identifiable {
 public actor TaskCache {
 
     private let client: NotionClient
-    private let mapper: PropertyMapper
-    private let dataSourceID: String
+    private var mapper: PropertyMapper
+    private var dataSourceID: String
     private let log: SessionLog?
     private var settings: TaskFilterSettings
 
@@ -59,6 +59,26 @@ public actor TaskCache {
     }
 
     public func update(settings: TaskFilterSettings) { self.settings = settings }
+
+    /// Relie le cache à une autre base, ou à la même avec un schéma remis à jour.
+    ///
+    /// Sans cela, le cache bâti au premier chargement gardait sa source jusqu'à
+    /// la fin du processus : changer la base Tâches depuis les réglages, par une
+    /// reconnexion ou par une revalidation ne l'atteignait pas, et il continuait
+    /// d'interroger l'ancienne. Aucune erreur, aucune tâche, et une liaison
+    /// pourtant correcte en base.
+    ///
+    /// Changer de base vide ce qui venait de l'ancienne : ces tâches n'existent
+    /// pas dans la nouvelle, et les afficher proposerait de travailler sur des
+    /// pages qu'aucune entrée ne pourrait plus référencer.
+    public func rebind(dataSourceID: String, mapper: PropertyMapper) {
+        self.mapper = mapper
+        guard dataSourceID != self.dataSourceID else { return }
+        self.dataSourceID = dataSourceID
+        tasks = []
+        recentUses = [:]
+        lastSuccessfulSync = nil
+    }
 
     // MARK: - Rafraîchissement
 
@@ -80,7 +100,9 @@ public actor TaskCache {
 
         tasks = loaded
         lastSuccessfulSync = Date()
-        await log?.log(.sync, "cache de tâches rafraîchi=\(loaded.count)")
+        // La source est nommée : une liaison correcte en base et une lecture
+        // vide n'avaient jusqu'ici aucun moyen d'être rapprochées.
+        await log?.log(.sync, "cache de tâches rafraîchi=\(loaded.count) source=\(dataSourceID)")
     }
 
     /// Filtre poussé à l'API : statut non terminé, et responsable si demandé.

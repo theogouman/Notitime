@@ -40,6 +40,14 @@ final class OnboardingModel: ObservableObject {
     /// restait identique alors que la liaison avait bien été enregistrée.
     @Published private(set) var bindings: [DatabaseRole: String] = [:]
 
+    /// Appelé dès que la configuration permet de travailler : au retour de
+    /// l'autorisation, après une désignation manuelle, après une revalidation.
+    ///
+    /// C'est ce qui charge les tâches sans attendre : jusqu'ici l'utilisateur
+    /// finissait sa connexion devant une liste vide, et ne voyait ses tâches
+    /// qu'au relancement de l'application.
+    var onReady: (@MainActor () async -> Void)?
+
     private let environment: AppEnvironment
     private let flow = OAuthFlow()
     /// Conservé pour pouvoir relancer la détection sans refaire tout l'OAuth :
@@ -174,6 +182,7 @@ final class OnboardingModel: ObservableObject {
                 && result.assigned[.timeEntries] != nil
                 && result.sourceChoices.isEmpty
             step = complete ? .ready : .needsAssignment
+            if complete { await onReady?() }
         } catch {
             step = .failed(describe(error))
         }
@@ -241,6 +250,7 @@ final class OnboardingModel: ObservableObject {
         if broken.isEmpty {
             if changesStep { step = .ready }
             emptyReason = ""
+            await onReady?()
         } else {
             if changesStep { await browseAccessibleSources() }
             notice(for: broken)
@@ -306,6 +316,9 @@ final class OnboardingModel: ObservableObject {
                 // Tâches puis basculer en « connecté » laisserait Time Entries
                 // sans source, et la première session n'aurait nulle part où aller.
                 if changesStep { step = requiredRolesAreBound ? .ready : stepForPendingAssignment() }
+                // Y compris depuis les réglages, où l'étape ne bouge pas : la
+                // base des tâches vient peut-être de changer.
+                if requiredRolesAreBound { await onReady?() }
                 return true
             case .missing(let missing, _, _):
                 // FR-006 : la configuration est refusée tant que le schéma n'est

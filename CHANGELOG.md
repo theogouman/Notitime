@@ -12,6 +12,14 @@ Comportements visibles par l'utilisateur, dans l'ordre des livraisons.
 - Reconnaissance par schéma et non par nom : une base renommée reste reconnue,
   et les noms du template diffusé (« Status », « Date de début », « Méthode »)
   sont compris au même titre que ceux de la documentation.
+- Changer la base Tâches prend effet immédiatement. Le cache des tâches était
+  bâti au premier chargement puis réutilisé jusqu'à la fermeture : une base
+  changée depuis les réglages, par une reconnexion ou par une revalidation ne
+  l'atteignait pas, et il interrogeait l'ancienne. Sans erreur, sans tâche, et
+  avec une liaison pourtant correcte. Le journal nomme désormais la base
+  interrogée à chaque rafraîchissement.
+- Les tâches se chargent dès que la connexion Notion aboutit, sans attendre
+  l'ouverture du menu ni un relancement.
 - La liste des modèles d'une base est enfin lue correctement : cet endpoint ne
   suit pas l'enveloppe habituelle de l'API, et la réponse était rejetée — ce qui
   passait pour une base sans modèle de page.

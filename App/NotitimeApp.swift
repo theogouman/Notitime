@@ -94,6 +94,9 @@ final class RootState: ObservableObject {
                 onboarding.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() },
                 session.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
             ]
+            // FR-009 — les tâches se chargent dès que la configuration le
+            // permet, sans attendre l'ouverture du menu ni un relancement.
+            onboarding.onReady = { [weak session] in await session?.loadTasks() }
             onboarding.restoreFromPersistence()
             Task {
                 // Repère de lancement : sans lui, deux lignes identiques à
