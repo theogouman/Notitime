@@ -202,8 +202,13 @@ final class OnboardingModel: ObservableObject {
     /// FR-006a, T105 — revalide chaque rôle lié et re-résout une source
     /// disparue : une seule candidate est proposée, plusieurs demandent un
     /// choix, aucune rend la configuration invalide.
-    func revalidate() async {
-        step = .discovering
+    ///
+    /// `changesStep` est faux depuis les réglages : une action lancée là-bas ne
+    /// doit jamais déplacer l'onglet Connexion sous les pieds de l'utilisateur.
+    /// Elle rend les rôles à reprendre, que l'appelant affiche où il se trouve.
+    @discardableResult
+    func revalidate(changesStep: Bool = true) async -> [DatabaseRole] {
+        if changesStep { step = .discovering }
         let context = environment.container.mainContext
         let stored = (try? context.fetch(FetchDescriptor<DatabaseBinding>())) ?? []
         var broken: [DatabaseRole] = []
@@ -221,7 +226,8 @@ final class OnboardingModel: ObservableObject {
                     // La revalidation est aussi ce qui rattrape une liaison
                     // enregistrée avant que le modèle de page ne soit constaté.
                     binding.usesDefaultTemplate = await detectsDefaultTemplate(
-                        for: role, dataSourceID: binding.dataSourceID)
+                        for: role, dataSourceID: binding.dataSourceID,
+                        current: binding.usesDefaultTemplate)
                     try? context.save()
                 }
             } catch {
@@ -233,12 +239,13 @@ final class OnboardingModel: ObservableObject {
 
         reloadBindings()
         if broken.isEmpty {
-            step = .ready
+            if changesStep { step = .ready }
             emptyReason = ""
         } else {
-            await browseAccessibleSources()
+            if changesStep { await browseAccessibleSources() }
             notice(for: broken)
         }
+        return broken
     }
 
     private func notice(for broken: [DatabaseRole]) {
@@ -427,18 +434,19 @@ final class OnboardingModel: ObservableObject {
     ///
     /// Un échec n'empêche pas de lier : sans modèle, les pages seront simplement
     /// nues, ce qui reste préférable à une configuration bloquée.
-    private func detectsDefaultTemplate(for role: DatabaseRole, dataSourceID: String) async -> Bool {
+    private func detectsDefaultTemplate(for role: DatabaseRole, dataSourceID: String,
+                                        current: Bool = false) async -> Bool {
         guard role == .timeEntries else { return false }
+        var outcome = DefaultTemplateProbe.Outcome.unreadable
         do {
-            let has = try await environment.notion.hasDefaultTemplate(dataSourceID: dataSourceID)
-            await environment.log.log(.sync, "modèle de page par défaut=\(has ? "oui" : "non") "
-                                      + "source=\(dataSourceID)")
-            return has
+            outcome = .has(try await environment.notion.hasDefaultTemplate(dataSourceID: dataSourceID))
         } catch {
-            await environment.log.log(.sync, "modèles de page illisibles : \(error) — "
-                                      + "les entrées seront créées sans modèle")
-            return false
+            await environment.log.log(.sync, "modèles de page illisibles : \(error)")
         }
+        let decided = DefaultTemplateProbe.decide(role: role, current: current, outcome: outcome)
+        await environment.log.log(.sync, "modèle de page par défaut=\(decided ? "oui" : "non") "
+                                  + "source=\(dataSourceID)")
+        return decided
     }
 
     private func save(role: DatabaseRole, dataSourceID: String, dataSourceName: String,

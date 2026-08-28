@@ -12,6 +12,16 @@ Comportements visibles par l'utilisateur, dans l'ordre des livraisons.
 - Reconnaissance par schéma et non par nom : une base renommée reste reconnue,
   et les noms du template diffusé (« Status », « Date de début », « Méthode »)
   sont compris au même titre que ceux de la documentation.
+- Le modèle de page par défaut de la base Time Entries est reconstaté à chaque
+  lancement, et plus seulement à la liaison : une base liée avant que Notitime
+  ne sache le lire créait ses entrées nues, sans que rien ne le dise. Le journal
+  indique désormais, pour chaque entrée, si elle est née d'un modèle.
+- Changer une base depuis les réglages ouvre une fenêtre de choix pour ce rôle
+  précis. Le bouton unique d'autrefois basculait tout l'onglet Connexion sur
+  l'écran de désignation manuelle, où le premier clic réassignait une base à un
+  rôle qu'on n'avait pas choisi.
+- « Revalider » dit son résultat dans les réglages au lieu de déplacer
+  l'utilisateur vers un autre onglet.
 - Les statuts considérés terminés sont lus dans la base — le groupe « terminé »
   de la propriété, quels que soient ses libellés — au lieu d'être devinés. Le
   réglage ne sert plus qu'à en ajouter d'autres, et un statut inconnu de la base

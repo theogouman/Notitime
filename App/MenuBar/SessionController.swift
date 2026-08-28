@@ -502,7 +502,8 @@ final class SessionController: ObservableObject {
         let entry = composer.compose(session)
         persist(entry)
         await environment.log.log(.sync, "entrée mise en file=\(entry.localID) "
-                                  + "tâche=\(entry.taskPageID) durée=\(entry.durationMinutes)min")
+                                  + "tâche=\(entry.taskPageID) durée=\(entry.durationMinutes)min "
+                                  + "modèle=\(binding.usesDefaultTemplate ? "défaut" : "aucun")")
         refreshPendingCount()
 
         let outbox = Outbox(client: environment.notion, composer: composer, log: environment.log)

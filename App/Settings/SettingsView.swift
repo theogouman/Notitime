@@ -16,6 +16,10 @@ struct SettingsView: View {
     @Query private var pending: [OutboxEntry]
 
     @State private var confirmingDisconnect = false
+    /// Rôle dont l'utilisateur change la base, `nil` quand la feuille est fermée.
+    @State private var rebinding: DatabaseRole?
+    /// Rôles que la dernière revalidation a trouvés en défaut.
+    @State private var broken: [DatabaseRole] = []
 
     private var settings: AppSettings? { stored.first }
 
@@ -36,6 +40,11 @@ struct SettingsView: View {
             journal
         }
         .formStyle(.grouped)
+        .sheet(item: $rebinding) { role in
+            if let onboarding = state.onboarding {
+                DatabasePickerSheet(model: onboarding, role: role) { rebinding = nil }
+            }
+        }
         .onChange(of: stored.first?.pomodoroMinutes) { _, _ in propagate() }
         .onChange(of: stored.first?.doneStatusValues) { _, _ in propagate() }
     }
@@ -181,17 +190,32 @@ struct SettingsView: View {
             if let onboarding = state.onboarding {
                 ForEach([DatabaseRole.tasks, .timeEntries, .projects], id: \.self) { role in
                     LabeledContent(SettingsView.label(role)) {
-                        Text(onboarding.bindings[role] ?? "non liée")
-                            .foregroundStyle(onboarding.bindings[role] == nil ? .secondary : .primary)
+                        HStack(spacing: 8) {
+                            Text(onboarding.bindings[role] ?? "non liée")
+                                .foregroundStyle(onboarding.bindings[role] == nil ? .secondary : .primary)
+                            // FR-007 — changer de base à tout moment, rôle par
+                            // rôle. Le bouton unique d'autrefois basculait tout
+                            // l'onglet Connexion sur l'écran de désignation
+                            // manuelle, où le premier clic réassignait une base
+                            // à un rôle qu'on n'avait pas choisi.
+                            Button(onboarding.bindings[role] == nil ? "Désigner…" : "Modifier…") {
+                                rebinding = role
+                            }
+                            .buttonStyle(.link)
+                        }
                     }
                 }
-                HStack(spacing: 6) {
-                    // FR-007 — changer de base à tout moment, avec revalidation.
-                    Button("Changer les bases…") {
-                        Task { await onboarding.browseAccessibleSources() }
-                    }
-                    // FR-006a — re-résoudre une source disparue.
-                    Button("Revalider") { Task { await onboarding.revalidate() } }
+                // FR-006a — re-résoudre une source disparue. Le résultat se dit
+                // ici : renvoyer l'utilisateur sur un autre onglet pour le lui
+                // apprendre revenait à lui reprendre la main sans prévenir.
+                Button("Revalider") {
+                    Task { broken = await onboarding.revalidate(changesStep: false) }
+                }
+                if !broken.isEmpty {
+                    Text("À reprendre : "
+                         + broken.map(SettingsView.label).joined(separator: ", "))
+                        .font(.caption)
+                        .foregroundStyle(.orange)
                 }
                 Text("Le changement d'une base revalide son schéma avant d'être accepté.")
                     .font(.caption)

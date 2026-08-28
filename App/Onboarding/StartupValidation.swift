@@ -44,6 +44,7 @@ struct StartupValidation {
                         map.map { ($0.key.rawValue, $0.value) })
                     binding.lastValidatedAt = Date()
                     binding.validationStateRaw = "valid"
+                    await refreshDefaultTemplate(binding, role: role)
                 case .missing(let missing, _, _):
                     binding.validationStateRaw = "missingProperties"
                     try? context.save()
@@ -65,6 +66,33 @@ struct StartupValidation {
         }
         try? context.save()
         return .valid
+    }
+
+    /// Le modèle de page par défaut est reconstaté à chaque lancement.
+    ///
+    /// C'est une propriété de la base, pas de la liaison : elle peut recevoir un
+    /// modèle par défaut longtemps après avoir été liée, et une liaison plus
+    /// ancienne que la détection gardait « non » indéfiniment — les entrées
+    /// naissaient nues sans que rien ne le dise. Une lecture impossible laisse
+    /// le drapeau tel quel : Notion injoignable n'est pas un modèle disparu.
+    private func refreshDefaultTemplate(_ binding: DatabaseBinding,
+                                        role: DatabaseRole) async {
+        guard role == .timeEntries else { return }
+        var outcome = DefaultTemplateProbe.Outcome.unreadable
+        do {
+            outcome = .has(try await environment.notion
+                .hasDefaultTemplate(dataSourceID: binding.dataSourceID))
+        } catch {
+            await environment.log.log(.sync, "modèles de page illisibles : \(error)")
+        }
+        let decided = DefaultTemplateProbe.decide(role: role,
+                                                  current: binding.usesDefaultTemplate,
+                                                  outcome: outcome)
+        if decided != binding.usesDefaultTemplate {
+            await environment.log.log(.sync, "modèle de page par défaut \(decided ? "adopté" : "abandonné") "
+                                      + "source=\(binding.dataSourceID)")
+        }
+        binding.usesDefaultTemplate = decided
     }
 
     /// S'il ne reste qu'une source, on la propose ; s'il y en a plusieurs, on

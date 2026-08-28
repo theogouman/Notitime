@@ -110,3 +110,36 @@ final class PageTemplateTests: XCTestCase {
         XCTAssertTrue(hasDefault, "le modèle par défaut était sur la seconde page")
     }
 }
+
+/// Le drapeau « cette base a un modèle par défaut » est constaté à la liaison,
+/// puis rafraîchi à chaque lancement.
+///
+/// Ce qui manquait : une liaison enregistrée avant que la détection n'existe
+/// gardait `false` pour toujours, et les pages naissaient nues sans que rien ne
+/// le dise. Le rafraîchissement le rattrape — à condition de ne pas effacer ce
+/// qu'on sait déjà quand Notion est simplement injoignable.
+final class DefaultTemplateProbeTests: XCTestCase {
+
+    func testOnlyTimeEntriesAreBornFromATemplate() {
+        for role in [DatabaseRole.tasks, .projects] {
+            XCTAssertFalse(DefaultTemplateProbe.decide(role: role, current: true,
+                                                       outcome: .has(true)),
+                           "seules les entrées de temps sont créées par l'app")
+        }
+    }
+
+    func testTheProbeAnswerWins() {
+        XCTAssertTrue(DefaultTemplateProbe.decide(role: .timeEntries, current: false,
+                                                  outcome: .has(true)))
+        XCTAssertFalse(DefaultTemplateProbe.decide(role: .timeEntries, current: true,
+                                                   outcome: .has(false)))
+    }
+
+    func testAnUnreadableListLeavesWhatIsAlreadyKnown() {
+        XCTAssertTrue(DefaultTemplateProbe.decide(role: .timeEntries, current: true,
+                                                  outcome: .unreadable),
+                      "Notion injoignable au lancement ne doit pas effacer le modèle")
+        XCTAssertFalse(DefaultTemplateProbe.decide(role: .timeEntries, current: false,
+                                                   outcome: .unreadable))
+    }
+}

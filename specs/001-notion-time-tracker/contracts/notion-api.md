@@ -22,9 +22,17 @@ Liste close des appels que `NotitimeCore` adresse à Notion. Tout appel hors de 
 | Résoudre les sources d'une base | `GET /v1/databases/{database_id}` → `data_sources[]` (`id`, `name`) | Après découverte, et à chaque revalidation d'un rôle | FR-004, FR-007 |
 | Lire le schéma d'une source | `GET /v1/data_sources/{data_source_id}` → `properties` | Validation, à chaque assignation ou changement | FR-006, FR-007 |
 | Interroger une source | `POST /v1/data_sources/{data_source_id}/query` | Rafraîchissement des tâches et des projets | FR-009 |
+| Lister les modèles d'une source | `GET /v1/data_sources/{data_source_id}/templates` → `{ id, name, is_default }`, paginé | Rôle Time Entries seulement : à la liaison **et à chaque lancement** | FR-010 |
 | Interroger Time Entries par `localID` | `POST /v1/data_sources/{data_source_id}/query` filtré sur la propriété d'identifiant local (« ID » par défaut, `rich_text`), **exécuté deux fois** : sans `is_archived` puis avec `is_archived: true` | **Uniquement** avant un réessai d'issue indéterminée | FR-028, R-06 |
 
 Le filtre de l'interrogation des tâches porte le statut non terminé et, quand la propriété Personne est mappée, l'utilisateur courant — poussés côté API et non appliqués après coup (FR-009). La pagination se suit par `start_cursor` / `page_size` en requête et `has_more` / `next_cursor` en réponse, jusqu'à épuisement, sans plafond.
+
+Le modèle de page par défaut est une propriété de la **base**, pas de la
+liaison : une base peut en recevoir un longtemps après avoir été liée. Il est
+donc reconstaté à chaque lancement, et non figé à la liaison — une liaison plus
+ancienne que la détection gardait sinon « pas de modèle » indéfiniment. Une
+lecture impossible laisse le drapeau tel quel : Notion injoignable un matin
+n'est pas la preuve qu'un modèle a disparu.
 
 **Le vocabulaire vient du schéma, jamais du code.** Aucun libellé d'option n'est
 écrit en dur, ni pour filtrer ni pour écrire. Ce qui compte comme « terminé » est
