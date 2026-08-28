@@ -123,6 +123,35 @@ public struct NotionTemplate: Decodable, Sendable, Equatable {
     }
 }
 
+/// Réponse de `GET /v1/data_sources/{id}/templates`.
+///
+/// Cet endpoint **ne suit pas** l'enveloppe de liste habituelle : les éléments
+/// sont sous `templates`, non sous `results`, et il n'y a pas de champ `object`.
+/// Le décoder comme une liste ordinaire échouait sur `results` absent, et
+/// l'échec passait pour une base sans modèle — les entrées naissaient nues.
+public struct NotionTemplateList: Decodable, Sendable {
+    public let templates: [NotionTemplate]
+    public let hasMore: Bool
+    public let nextCursor: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case templates, hasMore = "has_more", nextCursor = "next_cursor"
+    }
+
+    public init(templates: [NotionTemplate], hasMore: Bool = false, nextCursor: String? = nil) {
+        self.templates = templates
+        self.hasMore = hasMore
+        self.nextCursor = nextCursor
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        templates = try container.decodeIfPresent([NotionTemplate].self, forKey: .templates) ?? []
+        hasMore = try container.decodeIfPresent(Bool.self, forKey: .hasMore) ?? false
+        nextCursor = try container.decodeIfPresent(String.self, forKey: .nextCursor)
+    }
+}
+
 /// Une source de données : porte le schéma, s'interroge, reçoit les pages.
 public struct NotionDataSource: Sendable {
     public let id: String

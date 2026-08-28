@@ -56,8 +56,8 @@ public actor NotionClient {
         repeat {
             var path = NotionAPI.Path.dataSourceTemplates(id) + "?page_size=100"
             if let cursor { path += "&start_cursor=\(cursor)" }
-            let page: NotionList<NotionTemplate> = try await get(path)
-            results.append(contentsOf: page.results)
+            let page: NotionTemplateList = try await get(path)
+            results.append(contentsOf: page.templates)
             cursor = page.hasMore ? page.nextCursor : nil
         } while cursor != nil
         return results

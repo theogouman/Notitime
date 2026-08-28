@@ -12,6 +12,9 @@ Comportements visibles par l'utilisateur, dans l'ordre des livraisons.
 - Reconnaissance par schéma et non par nom : une base renommée reste reconnue,
   et les noms du template diffusé (« Status », « Date de début », « Méthode »)
   sont compris au même titre que ceux de la documentation.
+- La liste des modèles d'une base est enfin lue correctement : cet endpoint ne
+  suit pas l'enveloppe habituelle de l'API, et la réponse était rejetée — ce qui
+  passait pour une base sans modèle de page.
 - Le modèle de page par défaut de la base Time Entries est reconstaté à chaque
   lancement, et plus seulement à la liaison : une base liée avant que Notitime
   ne sache le lire créait ses entrées nues, sans que rien ne le dise. Le journal
@@ -49,6 +52,10 @@ Comportements visibles par l'utilisateur, dans l'ordre des livraisons.
 - L'icône du workspace Notion ne surgit plus une fois téléchargée : un squelette
   occupe sa place, bat une fois, puis lui cède par un fondu croisé.
 - Ces trois animations s'effacent quand le système demande moins de mouvement.
+- Le choix de la méthode se fait sur deux cartes côte à côte — Pomodoro et
+  Suivi libre — sous le titre « Comment veux-tu travailler ? ». Survoler
+  Pomodoro fait passer sa carte au second plan et découvre ses trois durées,
+  cliquables sur place.
 - L'emplacement dans la barre de menus a une largeur fixe : il ne se réajuste
   plus au démarrage et à l'arrêt d'une session.
 - L'anneau bleu du champ de recherche ne traverse plus la transition vers le

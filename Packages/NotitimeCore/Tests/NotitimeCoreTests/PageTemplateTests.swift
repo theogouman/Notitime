@@ -57,6 +57,13 @@ final class PageTemplateTests: XCTestCase {
 
     // MARK: - Découverte du modèle par défaut
 
+    /// Les charges de cette section sont celles que **publie la référence de
+    /// l'API** : `{ templates, has_more, next_cursor }`. Cet endpoint ne suit pas
+    /// l'enveloppe de liste habituelle — pas de `object`, pas de `results`. Ces
+    /// trois tests l'avaient d'abord supposée, et affirmaient donc le contraire
+    /// de ce que Notion répond : ils passaient pendant que la lecture échouait
+    /// en production, et l'échec passait pour une base sans modèle.
+
     /// `GET /v1/data_sources/{id}/templates` — c'est `is_default` qui désigne le
     /// modèle appliqué par `template[type]=default`.
     func testDefaultTemplateIsDetectedFromTheSource() async throws {
@@ -64,7 +71,7 @@ final class PageTemplateTests: XCTestCase {
         await transport.enqueue(.get, NotionAPI.Path.dataSourceTemplates("ds-te") + "?page_size=100",
                                 status: 200,
                                 json: #"""
-                                {"object":"list","results":[
+                                {"templates":[
                                   {"id":"tpl-1","name":"Autre modèle","is_default":false},
                                   {"id":"tpl-2","name":"New Generic Task","is_default":true}],
                                  "has_more":false,"next_cursor":null}
@@ -84,7 +91,7 @@ final class PageTemplateTests: XCTestCase {
         let transport = FixtureTransport()
         await transport.enqueue(.get, NotionAPI.Path.dataSourceTemplates("ds-te") + "?page_size=100",
                                 status: 200,
-                                json: #"{"object":"list","results":[{"id":"tpl-1","name":"M","is_default":false}],"has_more":false}"#)
+                                json: #"{"templates":[{"id":"tpl-1","name":"M","is_default":false}],"has_more":false}"#)
         let client = NotionClient(transport: transport, authorization: StaticAuthorization(),
                                   rateLimiter: .forTesting(VirtualTimeSource()))
 
@@ -99,9 +106,9 @@ final class PageTemplateTests: XCTestCase {
         let transport = FixtureTransport()
         let path = NotionAPI.Path.dataSourceTemplates("ds-te")
         await transport.enqueue(.get, path + "?page_size=100", status: 200,
-                                json: #"{"object":"list","results":[{"id":"t1","name":"A","is_default":false}],"has_more":true,"next_cursor":"c1"}"#)
+                                json: #"{"templates":[{"id":"t1","name":"A","is_default":false}],"has_more":true,"next_cursor":"c1"}"#)
         await transport.enqueue(.get, path + "?page_size=100&start_cursor=c1", status: 200,
-                                json: #"{"object":"list","results":[{"id":"t2","name":"B","is_default":true}],"has_more":false}"#)
+                                json: #"{"templates":[{"id":"t2","name":"B","is_default":true}],"has_more":false}"#)
         let client = NotionClient(transport: transport, authorization: StaticAuthorization(),
                                   rateLimiter: .forTesting(VirtualTimeSource()))
 
@@ -143,3 +150,4 @@ final class DefaultTemplateProbeTests: XCTestCase {
                                                    outcome: .unreadable))
     }
 }
+

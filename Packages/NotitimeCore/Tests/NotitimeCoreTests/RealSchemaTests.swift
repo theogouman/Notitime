@@ -64,6 +64,33 @@ final class RealSchemaTests: XCTestCase {
         XCTAssertEqual(named, ["Terminé", "Annulé"])
     }
 
+    /// FR-011, US3.2 — le filtre Personne ne doit écarter que les tâches
+    /// confiées à quelqu'un d'autre.
+    ///
+    /// L'identifiant employé est celui du **propriétaire du compte**, pas celui
+    /// du bot : filtrer sur le bot ne remonterait jamais une tâche assignée.
+    func testTheAssigneeClauseKeepsMineAndTheUnassignedOnes() async throws {
+        var settings = AppSettings().taskFilterSettings(currentUserID: "user-théo")
+        settings.includeUnassigned = true
+        let cache = TaskCache(client: NotionClient(transport: FixtureTransport(),
+                                                   authorization: StaticAuthorization(),
+                                                   rateLimiter: .forTesting(VirtualTimeSource())),
+                              mapper: PropertyMapper(map: try mapping("tasks", as: .tasks)),
+                              dataSourceID: "ds-tpl-tasks",
+                              settings: settings)
+
+        let built = await cache.queryFilter()
+        let filter = try XCTUnwrap(built)
+        let clauses = try XCTUnwrap(filter["and"] as? [[String: Any]])
+        let either = try XCTUnwrap(clauses.compactMap { $0["or"] as? [[String: Any]] }.first)
+
+        XCTAssertEqual(either.count, 2)
+        XCTAssertEqual((either[0]["people"] as? [String: Any])?["contains"] as? String, "user-théo")
+        XCTAssertEqual((either[1]["people"] as? [String: Any])?["is_empty"] as? Bool, true)
+        // Le statut reste filtré en même temps : les deux clauses coexistent.
+        XCTAssertEqual(RealSchemaTests.statusValues(in: filter), ["Terminé", "Annulé"])
+    }
+
     // MARK: - Écriture d'une entrée (FR-026)
 
     /// Aucune valeur inventée : chaque `select` et chaque `status` écrit doit

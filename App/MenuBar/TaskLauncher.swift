@@ -72,33 +72,7 @@ struct TaskLauncher: View {
 
             Divider()
 
-            // FR-018 — les préréglages de durée, plus la valeur personnalisée.
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Pomodoro")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                HStack(spacing: 6) {
-                    ForEach(controller.pomodoroPresets, id: \.self) { minutes in
-                        Button("\(minutes) min") {
-                            Task { await controller.startPomodoro(minutes: minutes) }
-                        }
-                        .buttonStyle(PromotedButtonStyle(isPromoted: isLast(.pomodoro, minutes)))
-                        .keyboardShortcut(isLast(.pomodoro, minutes) ? .defaultAction : nil)
-                    }
-                }
-            }
-
-            // FR-016 — durée libre : une seule commande, aucune valeur à choisir.
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Suivi libre")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                Button("Démarrer le suivi") {
-                    Task { await controller.startTracker() }
-                }
-                .buttonStyle(PromotedButtonStyle(isPromoted: isLast(.tracker, nil)))
-                .keyboardShortcut(isLast(.tracker, nil) ? .defaultAction : nil)
-            }
+            MethodCards(controller: controller)
 
             Spacer(minLength: 0)
         }
@@ -106,16 +80,6 @@ struct TaskLauncher: View {
         // au premier élément focalisable du panneau — l'en-tête — qui héritait
         // alors de l'anneau bleu, à l'endroit même où était le champ.
         .focusEffectDisabled()
-    }
-
-    /// La dernière méthode lancée est mise en avant et déclenchée par Entrée.
-    /// À défaut d'historique, c'est le premier préréglage qui l'emporte.
-    private func isLast(_ mode: SessionMode, _ minutes: Int?) -> Bool {
-        guard let last = controller.lastMethod else {
-            return mode == .pomodoro && minutes == controller.pomodoroPresets.first
-        }
-        guard last.mode == mode else { return false }
-        return mode == .tracker || last.minutes == minutes
     }
 
     // MARK: - Transitions
@@ -152,23 +116,6 @@ struct TaskLauncher: View {
             highlighted = ids[max((current ?? 0) - 1, 0)]
         default:
             break
-        }
-    }
-}
-
-/// Bouton mis en avant, ou non, selon qu'il porte la dernière méthode utilisée.
-///
-/// `.borderedProminent` et `.bordered` sont deux types distincts : les choisir
-/// dans une expression ternaire ne compile pas, d'où ce style qui tranche à
-/// l'intérieur.
-struct PromotedButtonStyle: PrimitiveButtonStyle {
-    let isPromoted: Bool
-
-    func makeBody(configuration: Configuration) -> some View {
-        if isPromoted {
-            Button(configuration).buttonStyle(.borderedProminent)
-        } else {
-            Button(configuration).buttonStyle(.bordered)
         }
     }
 }
