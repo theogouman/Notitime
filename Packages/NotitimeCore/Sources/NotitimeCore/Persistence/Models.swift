@@ -406,12 +406,6 @@ public final class AppSettings {
     public var lastMethodRaw: String?
     /// Durée du dernier pomodoro lancé, en minutes.
     public var lastMethodMinutes: Int?
-    /// Date à laquelle l'accueil du premier lancement a été mené à son terme.
-    ///
-    /// Optionnelle, et c'est ce qui compte : le magasin d'un utilisateur déjà
-    /// installé n'a pas cette colonne, et une valeur absente doit valoir « pas
-    /// encore vu » sans migration.
-    public var welcomeCompletedAt: Date?
 
     /// Les valeurs par défaut doivent permettre d'utiliser l'app sans jamais
     /// ouvrir les réglages (US7). Elles reprennent FR-018 et FR-024.

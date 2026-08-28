@@ -43,3 +43,27 @@ final class AppReadinessTests: XCTestCase {
         XCTAssertFalse(AppReadiness.needsBinding(missing: [.tasks]).allowsSession)
     }
 }
+
+/// Où mène le lancement, selon ce que l'application peut faire.
+///
+/// La règle avait dérivé : l'accueil était conditionné à « ne l'avoir jamais
+/// terminé », si bien qu'un utilisateur déconnecté retombait sur la fenêtre de
+/// configuration — un écran qui n'offre qu'un bouton de connexion là où
+/// l'accueil explique et conduit.
+final class StartupDestinationTests: XCTestCase {
+
+    func testNoAccountLeadsToTheWelcome() {
+        XCTAssertEqual(StartupDestination.decide(for: .needsConnection), .welcome)
+    }
+
+    func testAnAccountWithMissingDatabasesLeadsToTheConfiguration() {
+        XCTAssertEqual(StartupDestination.decide(for: .needsBinding(missing: [.tasks])),
+                       .configuration)
+    }
+
+    /// Rien à ouvrir : l'application vit dans la barre de menus, et lui imposer
+    /// une fenêtre au lancement irait contre son principe même.
+    func testAConfiguredApplicationOpensNothing() {
+        XCTAssertEqual(StartupDestination.decide(for: .ready), .nothing)
+    }
+}

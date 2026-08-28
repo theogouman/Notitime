@@ -12,6 +12,7 @@ struct SettingsView: View {
     /// Appelé après une déconnexion : la fenêtre revient à l'onglet Connexion.
     var onDisconnected: () -> Void = {}
 
+    @Environment(\.openWindow) private var openWindow
     @Query private var stored: [AppSettings]
     @Query private var pending: [OutboxEntry]
 
@@ -243,6 +244,10 @@ struct SettingsView: View {
                         Task {
                             await state.onboarding?.disconnect()
                             onDisconnected()
+                            // Plus de compte relié : c'est l'accueil qui prend
+                            // la main, pas un onglet de réglages devenu vide.
+                            WelcomeWindow.present(openWindow)
+                            ConfigurationWindow.close()
                         }
                     }
                     Button("Annuler", role: .cancel) {}

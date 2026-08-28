@@ -137,27 +137,9 @@ final class RootState: ObservableObject {
     /// Une seule lecture de la situation pour toutes les surfaces.
     var readiness: AppReadiness { onboarding?.readiness ?? .needsConnection }
 
-    /// L'accueil du premier lancement reste à voir.
-    ///
-    /// Une seule fois : se déconnecter plus tard ramène à l'écran de connexion,
-    /// pas au récit — on ne raconte pas deux fois la même histoire à quelqu'un
-    /// qui a déjà installé l'application.
-    var showsWelcome: Bool {
-        readiness == .needsConnection && storedSettings?.welcomeCompletedAt == nil
-    }
+    /// Où mène le lancement — l'accueil, la configuration, ou nulle part.
+    var destination: StartupDestination { StartupDestination.decide(for: readiness) }
 
-    func completeWelcome() {
-        guard let environment, let settings = storedSettings else { return }
-        settings.welcomeCompletedAt = Date()
-        try? environment.container.mainContext.save()
-        objectWillChange.send()
-    }
-
-    private var storedSettings: AppSettings? {
-        guard let environment else { return nil }
-        return try? environment.container.mainContext
-            .fetch(FetchDescriptor<AppSettings>()).first
-    }
 
     /// Cas limite « quitter l'app volontairement » : une session en cours suit
     /// la règle de son mode. On ne quitte jamais en perdant du temps travaillé.
@@ -231,9 +213,10 @@ struct RootView: View {
             case .needsConnection:
                 // Rien d'autre n'est proposé : démarrer une session sans compte
                 // relié produirait une entrée que rien ne pourrait envoyer.
+                // L'accueil, et non la configuration : c'est lui qui explique
+                // ce qui va se passer, et il enchaîne sur la connexion.
                 ConnectPromptView(size: .compact, showsHint: false) {
-                    ConfigurationWindow.present(openWindow)
-                    Task { await state.onboarding?.connect() }
+                    WelcomeWindow.present(openWindow)
                 }
 
             case .needsBinding:
@@ -334,16 +317,14 @@ struct MenuBarLabel: View {
         .frame(width: MenuBarLabel.width)
         .accessibilityLabel(accessibilityLabel)
         .onAppear {
-            // Premier lancement ou déconnexion : il n'y a rien à faire dans le
-            // menu tant que Notion n'est pas connecté, autant ouvrir une
-            // fenêtre. L'accueil au tout premier lancement, la configuration
-            // ensuite — le récit ne sert qu'une fois.
-            if !state.isConfigured, !state.hasPresentedOnboarding {
+            // Sans compte relié il n'y a rien à faire dans le menu : on ouvre
+            // une fenêtre. Laquelle, c'est `StartupDestination` qui le dit.
+            if !state.hasPresentedOnboarding {
                 state.hasPresentedOnboarding = true
-                if state.showsWelcome {
-                    WelcomeWindow.present(openWindow)
-                } else {
-                    ConfigurationWindow.present(openWindow)
+                switch state.destination {
+                case .welcome: WelcomeWindow.present(openWindow)
+                case .configuration: ConfigurationWindow.present(openWindow)
+                case .nothing: break
                 }
             }
 

@@ -5,6 +5,12 @@ import NotitimeCore
 struct WelcomeView: View {
 
     @ObservedObject var state: RootState
+    /// L'accueil recommence à son début à chaque ouverture.
+    ///
+    /// Il ne s'ouvre que sans compte relié — c'est-à-dire rarement, et toujours
+    /// au moment où il faut expliquer. Un état retenu d'une fois sur l'autre
+    /// n'apporterait qu'une raison de plus de se tromper d'écran, et le récit se
+    /// passe d'un clic pour qui le connaît déjà.
     @StateObject private var flow = WelcomeFlow()
 
     var body: some View {
@@ -62,8 +68,10 @@ struct WelcomeView: View {
     /// Fin de l'accueil : il ne se rouvrira pas, la fenêtre se ferme, et le menu
     /// s'ouvre sur les tâches déjà chargées.
     private func finish() {
-        state.completeWelcome()
-        WelcomeWindow.close()
+        // Le menu s'ouvre avant que la fenêtre ne se ferme : l'application est
+        // un agent, et fermer sa dernière fenêtre la fait passer au second plan
+        // — le clic sur l'emplacement partirait alors dans le vide.
         StatusItemOpener.open()
+        WelcomeWindow.close()
     }
 }

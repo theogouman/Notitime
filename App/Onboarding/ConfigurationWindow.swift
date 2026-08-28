@@ -29,6 +29,11 @@ enum ConfigurationWindow {
         }
     }
 
+    @MainActor
+    static func close() {
+        window()?.close()
+    }
+
     /// Ouvre la fenêtre et l'amène au premier plan.
     ///
     /// L'application est un agent (`LSUIElement`) : sans activation explicite, sa
