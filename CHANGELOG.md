@@ -94,9 +94,14 @@ Comportements visibles par l'utilisateur, dans l'ordre des livraisons.
   présentation, les deux façons de connecter Notion, puis la lecture des bases
   détectées, changeables sur place.
 - Terminer l'accueil ferme la fenêtre et ouvre le menu, tâches déjà chargées.
-- Se déconnecter ramène à l'accueil, depuis les réglages comme depuis le menu :
-  sans compte relié, la fenêtre de configuration n'offre qu'un bouton de
-  connexion là où l'accueil explique et conduit.
+- Se déconnecter ne rejoue pas l'accueil : on reste où l'on est, avec le bouton
+  de connexion sous les yeux.
+- « Le problème ? » scintille pendant le silence qui suit, et le récit reprend
+  ensuite là où il s'était arrêté au lieu de se redéposer depuis le début.
+- La commande de Notion est citée dans une pastille à chasse fixe (JetBrains
+  Mono, embarquée), fond sombre à coins arrondis.
+- Le dernier écran attend la fin de la détection : les bases s'affichent
+  validées au lieu de passer par « à désigner » en orange.
 - Le premier écran s'ouvre sur « Bienvenue dans Notitime », qui s'efface vers le
   haut pour laisser la place au récit. Celui-ci se dépose plus lentement, avec un
   silence après la question et un autre après les deux promesses, et se rejoue

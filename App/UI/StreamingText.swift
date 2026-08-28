@@ -34,6 +34,8 @@ struct StreamedLines: View {
     let lines: [StreamLine]
     /// Nombre de mots déjà déposés.
     let revealed: Int
+    /// Ligne qui scintille — celle sur laquelle le récit marque un temps.
+    var shimmering: Int?
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -52,6 +54,26 @@ struct StreamedLines: View {
                         }
                     }
                 }
+            }
+        }
+    }
+
+    /// Une ligne, et son scintillement le cas échéant.
+    ///
+    /// La bande de surbrillance est découpée sur la ligne entière, pas sur
+    /// chaque mot : découpée mot à mot, elle repartirait à zéro à chaque
+    /// espace et le balayage ne se lirait plus.
+    @ViewBuilder
+    private func row(_ line: StreamLine) -> some View {
+        let content = HStack(alignment: .firstTextBaseline, spacing: line.size * 0.26) {
+            ForEach(Array(line.tokens.enumerated()), id: \.offset) { position, token in
+                view(token, line: line)
+                    .modifier(Word(isIn: isIn(line, position), reduce: reduceMotion))
+            }
+        }
+        content.overlay {
+            if shimmering == line.id, !reduceMotion {
+                ShimmerSweep().mask(content).allowsHitTesting(false)
             }
         }
     }
@@ -79,8 +101,8 @@ struct StreamedLines: View {
             Image("Avatar")
                 .resizable()
                 .scaledToFit()
-                .padding(line.size * 0.20)
-                .frame(width: line.size * 1.7, height: line.size * 1.7)
+                .padding(line.size * 0.17)
+                .frame(width: line.size * 1.35, height: line.size * 1.35)
                 .background(Circle().fill(Color.white))
                 .overlay { Circle().strokeBorder(Color.primary.opacity(0.08)) }
                 // Une image n'a pas de ligne de base : on l'aligne sur celle du
@@ -90,7 +112,7 @@ struct StreamedLines: View {
             Image(nsImage: NSApp.applicationIconImage)
                 .resizable()
                 .scaledToFit()
-                .frame(width: line.size * 1.15, height: line.size * 1.15)
+                .frame(width: line.size, height: line.size)
                 .alignmentGuide(.firstTextBaseline) { $0.height * 0.84 }
         case .notionLogo:
             Image("NotionLogo")

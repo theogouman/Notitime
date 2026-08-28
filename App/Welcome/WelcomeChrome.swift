@@ -77,6 +77,27 @@ struct WelcomeCard<Content: View>: View {
     }
 }
 
+/// Une commande citée telle qu'elle apparaît dans Notion.
+///
+/// Police à chasse fixe embarquée, fond sombre à coins arrondis : la citation
+/// se distingue d'elle-même, et les guillemets deviennent inutiles.
+struct CodeChip: View {
+    let text: String
+
+    var body: some View {
+        Text(verbatim: text)
+            .font(.custom("JetBrainsMono-Medium", size: 12))
+            .foregroundStyle(.white)
+            .padding(.horizontal, 9)
+            .padding(.vertical, 5)
+            .background(
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .fill(Color(red: 0.13, green: 0.14, blue: 0.17))
+            )
+            .fixedSize(horizontal: false, vertical: true)
+    }
+}
+
 /// Emplacement d'une illustration à venir.
 ///
 /// Une zone franchement vide plutôt qu'une image approximative : elle dit

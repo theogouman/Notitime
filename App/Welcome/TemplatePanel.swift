@@ -31,7 +31,10 @@ struct TemplatePanel: View {
                         // Sans cela la phrase se fait rogner au lieu de passer
                         // à la ligne : SwiftUI la tient pour une ligne unique.
                         .fixedSize(horizontal: false, vertical: true)
-                        .frame(maxWidth: 620)
+                        // Assez étroit pour que la phrase se coupe en deux lignes de
+                        // longueur voisine : au-delà, la première en prenait
+                        // douze mots et la seconde quatre.
+                        .frame(maxWidth: 440)
                 }
             }
 

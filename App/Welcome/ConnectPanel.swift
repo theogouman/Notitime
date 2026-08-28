@@ -32,14 +32,18 @@ struct ConnectPanel: View {
             // hauteur de la plus haute, sans que la rangée n'occupe l'écran.
             HStack(alignment: .top, spacing: 16) {
                 Staggered(index: 2, shown: shown) {
-                    option(title: "Tu utilises notre template",
-                           detail: ConnectPanel.templateSentence,
-                           symbol: "square.on.square")
+                    option(title: "Tu utilises notre template", symbol: "square.on.square") {
+                        VStack(alignment: .leading, spacing: 7) {
+                            Text("Dans ce cas, tu cliqueras sur")
+                            CodeChip(text: "Use a template provided by the developer")
+                            Text("pour que notre template soit dupliqué.")
+                        }
+                    }
                 }
                 Staggered(index: 3, shown: shown) {
-                    option(title: "Tu utilises tes bases de données déjà existantes",
-                           detail: Text("Dans ce cas, tu sélectionneras les pages à connecter pour que Notitime s'y connecte."),
-                           symbol: "link")
+                    option(title: "Tu utilises tes bases de données déjà existantes", symbol: "link") {
+                        Text("Dans ce cas, tu sélectionneras les pages à connecter pour que Notitime s'y connecte.")
+                    }
                 }
             }
             .fixedSize(horizontal: false, vertical: true)
@@ -59,8 +63,8 @@ struct ConnectPanel: View {
         .onAppear { shown = true }
     }
 
-    private func option(title: LocalizedStringKey, detail: Text,
-                        symbol: String) -> some View {
+    private func option<Detail: View>(title: LocalizedStringKey, symbol: String,
+                                      @ViewBuilder detail: @escaping () -> Detail) -> some View {
         WelcomeCard(stretches: true) {
             VStack(alignment: .leading, spacing: 12) {
                 // Illustration à venir : elle remplacera cet emplacement.
@@ -68,27 +72,12 @@ struct ConnectPanel: View {
                 Text(title)
                     .font(.system(size: 18, weight: .medium))
                     .fixedSize(horizontal: false, vertical: true)
-                detail
+                detail()
                     .font(.system(size: 14))
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
-    }
-
-    /// La commande de Notion est citée telle qu'elle apparaît à l'écran : en
-    /// style de code, sur fond contrasté. Les guillemets deviennent inutiles —
-    /// c'est le fond qui dit où la citation commence et où elle finit.
-    private static var templateSentence: Text {
-        var opening = AttributedString(String(localized: "Dans ce cas, tu cliqueras sur "))
-        var code = AttributedString("Use a template provided by the developer")
-        code.font = .system(size: 13, weight: .medium, design: .monospaced)
-        code.foregroundColor = .white
-        code.backgroundColor = Color(red: 0.17, green: 0.18, blue: 0.21)
-        let closing = AttributedString(String(localized: " pour que notre template soit dupliqué."))
-        opening.append(code)
-        opening.append(closing)
-        return Text(opening)
     }
 
     /// Ce que fait l'application pendant l'aller-retour dans le navigateur, et

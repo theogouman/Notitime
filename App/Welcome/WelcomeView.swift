@@ -42,11 +42,24 @@ struct WelcomeView: View {
             // vue en place et rien ne se croiserait.
             .id(flow.panel)
             .transition(.page(forward: flow.forward))
-            .onChange(of: model.isConnected) { _, connected in
-                // La connexion aboutie fait avancer d'elle-même : l'utilisateur
-                // revient du navigateur, l'écran suivant l'attend.
-                guard connected, flow.panel == .connect else { return }
-                advance(.ready)
+            .onChange(of: model.step) { _, step in
+                // On attend la fin de la détection, pas la fin de
+                // l'autorisation : le compte est relié dès le retour du
+                // navigateur, mais les bases ne sont connues qu'après. Avancer
+                // trop tôt affichait « à désigner » en orange le temps que le
+                // schéma se valide, puis se corrigeait tout seul.
+                guard flow.panel == .connect, model.isConnected else { return }
+                switch step {
+                case .connecting, .discovering: return
+                default: advance(.ready)
+                }
+            }
+            .onAppear {
+                // Réouvert sans compte relié, l'accueil repart de son début :
+                // une fenêtre refermée garde son état, et il n'y a rien de plus
+                // absurde que « Notion est bien connecté » sans connexion.
+                guard !model.isConnected, flow.panel != .manifesto else { return }
+                flow.advance(to: .manifesto)
             }
         } else {
             Text("Notitime n'a pas pu démarrer.").font(.callout)

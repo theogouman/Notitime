@@ -20,6 +20,11 @@
 	<string>1</string>
 	<!-- Application accessoire : elle vit dans la barre de menus, sans icône
 	     dans le Dock et sans fenêtre principale (principe I). -->
+	<!-- Police embarquée pour les citations de code (JetBrains Mono, OFL).
+	     Le chemin est relatif à Resources ; le catalogue de ressources aplatit
+	     l'arborescence, la police se retrouve donc à sa racine. -->
+	<key>ATSApplicationFontsPath</key>
+	<string>.</string>
 	<key>LSUIElement</key>
 	<true/>
 	<key>LSMinimumSystemVersion</key>

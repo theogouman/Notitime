@@ -89,26 +89,35 @@ struct DatabaseChip: View {
                 }
             }
         } label: {
-            HStack(spacing: 7) {
+            HStack(spacing: 8) {
                 Image("DatabaseIcon")
                     .renderingMode(.template)
                     .resizable()
                     .scaledToFit()
                     .frame(width: 17, height: 17)
-                    .foregroundStyle(Color.accentColor)
+                    .foregroundStyle(.white.opacity(0.75))
                 Text(model.bindings[role] ?? "à désigner")
                     .font(.system(size: 22, weight: .medium))
-                    .foregroundStyle(model.bindings[role] == nil ? Color.orange : Color.primary)
+                    .foregroundStyle(model.bindings[role] == nil ? Color.orange : Color.white)
                 // La double flèche dit que le nom se change : sans elle, rien ne
                 // distingue une base liée d'un mot de la phrase.
                 Image(systemName: "arrow.up.and.down")
                     .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(Color.accentColor.opacity(0.8))
+                    .foregroundStyle(.white.opacity(0.6))
             }
             .padding(.horizontal, 13)
-            .padding(.vertical, 6)
-            .background(Capsule().fill(Color.accentColor.opacity(hovered ? 0.28 : 0.16)))
-            .contentShape(Capsule())
+            .padding(.vertical, 7)
+            // Fond noir, quel que soit le thème : le nom d'une base est une
+            // valeur, pas une phrase, et il doit se voir comme telle.
+            .background(
+                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    .fill(Color.black.opacity(hovered ? 0.78 : 0.92))
+            )
+            .overlay {
+                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    .strokeBorder(Color.white.opacity(0.12))
+            }
+            .contentShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
         }
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)

@@ -213,10 +213,9 @@ struct RootView: View {
             case .needsConnection:
                 // Rien d'autre n'est proposé : démarrer une session sans compte
                 // relié produirait une entrée que rien ne pourrait envoyer.
-                // L'accueil, et non la configuration : c'est lui qui explique
-                // ce qui va se passer, et il enchaîne sur la connexion.
                 ConnectPromptView(size: .compact, showsHint: false) {
-                    WelcomeWindow.present(openWindow)
+                    ConfigurationWindow.present(openWindow)
+                    Task { await state.onboarding?.connect() }
                 }
 
             case .needsBinding:

@@ -22,7 +22,6 @@ struct ShimmerText: View {
     private static let band: CGFloat = 4
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var swept = false
 
     var body: some View {
         label
@@ -38,34 +37,46 @@ struct ShimmerText: View {
             .fixedSize(horizontal: false, vertical: true)
     }
 
-    /// La bande, découpée aux glyphes et poussée de la gauche vers la droite.
-    ///
-    /// `background-position` va de `100 %` à `0 %` sur une bande de `400 %` :
-    /// le bord droit de la bande part collé au bord droit du texte — donc
-    /// décalé de trois largeurs vers la gauche — et finit aligné à gauche.
     @ViewBuilder
     private var sweep: some View {
         if !reduceMotion {
-            GeometryReader { geo in
-                LinearGradient(
-                    stops: [
-                        .init(color: .clear, location: 0),
-                        .init(color: .clear, location: 0.40),
-                        .init(color: .primary, location: 0.50),
-                        .init(color: .clear, location: 0.60),
-                        .init(color: .clear, location: 1)
-                    ],
-                    startPoint: .leading,
-                    endPoint: .trailing
-                )
-                .frame(width: geo.size.width * ShimmerText.band)
-                .offset(x: swept ? 0 : -geo.size.width * (ShimmerText.band - 1))
-                .animation(.linear(duration: ShimmerText.duration).repeatForever(autoreverses: false),
-                           value: swept)
-            }
-            .mask(label)
-            .allowsHitTesting(false)
-            .onAppear { swept = true }
+            ShimmerSweep()
+                .mask(label)
+                .allowsHitTesting(false)
         }
+    }
+}
+
+/// La bande de surbrillance seule, à découper sur ce qu'on veut.
+///
+/// `background-position` va de `100 %` à `0 %` sur une bande de `400 %` : le
+/// bord droit de la bande part collé au bord droit du texte — donc décalé de
+/// trois largeurs vers la gauche — et finit aligné à gauche.
+struct ShimmerSweep: View {
+
+    var duration: Double = 2
+    var band: CGFloat = 4
+
+    @State private var swept = false
+
+    var body: some View {
+        GeometryReader { geo in
+            LinearGradient(
+                stops: [
+                    .init(color: .clear, location: 0),
+                    .init(color: .clear, location: 0.40),
+                    .init(color: .primary, location: 0.50),
+                    .init(color: .clear, location: 0.60),
+                    .init(color: .clear, location: 1)
+                ],
+                startPoint: .leading,
+                endPoint: .trailing
+            )
+            .frame(width: geo.size.width * band)
+            .offset(x: swept ? 0 : -geo.size.width * (band - 1))
+            .animation(.linear(duration: duration).repeatForever(autoreverses: false),
+                       value: swept)
+        }
+        .onAppear { swept = true }
     }
 }

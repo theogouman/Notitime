@@ -17,6 +17,8 @@ struct ManifestoPanel: View {
     @State private var tailRevealed = 0
     @State private var showsPills = false
     @State private var showsFooter = false
+    /// Ligne qui scintille pendant un silence.
+    @State private var shimmeringLine: Int?
     /// Un clic dépose tout : relire une animation déjà vue est une perte de
     /// temps, et elle se rejoue à la demande.
     @State private var skipped = false
@@ -25,9 +27,10 @@ struct ManifestoPanel: View {
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    /// Un mot toutes les 130 ms : le texte doit se lire au rythme où il se
-    /// dépose, pas défiler plus vite que l'œil.
-    private let wordGap = Duration.milliseconds(130)
+    /// La cadence de la recette d'origine. Le hoquet qu'on lui reprochait ne
+    /// venait pas d'elle : le second segment repartait du premier mot, et tout
+    /// le texte déjà déposé se redéposait sous les yeux.
+    private let wordGap = Duration.milliseconds(Int(Motion.wordGap * 1000))
 
     var body: some View {
         ZStack {
@@ -64,7 +67,8 @@ struct ManifestoPanel: View {
 
     private var story: some View {
         VStack(alignment: .leading, spacing: 20) {
-            StreamedLines(lines: ManifestoPanel.head, revealed: headRevealed)
+            StreamedLines(lines: ManifestoPanel.head, revealed: headRevealed,
+                          shimmering: shimmeringLine)
             pills
             StreamedLines(lines: ManifestoPanel.tail, revealed: tailRevealed)
 
@@ -126,17 +130,22 @@ struct ManifestoPanel: View {
         guard !Task.isCancelled else { return }
 
         // Silence après la question : c'est elle qui doit rester seule un
-        // instant, sinon la réponse arrive avant qu'on ne l'ait posée.
-        await stream(upTo: ManifestoPanel.beat) { headRevealed = $0 }
+        // instant, sinon la réponse arrive avant qu'on ne l'ait posée. Elle
+        // scintille pendant ce temps — le seul endroit de l'écran qui bouge.
+        await stream(from: 0, upTo: ManifestoPanel.beat) { headRevealed = $0 }
+        shimmeringLine = 4
         await pause(.milliseconds(1900))
-        await stream(upTo: StreamedLines.count(ManifestoPanel.head)) { headRevealed = $0 }
+        shimmeringLine = nil
+        // Le second segment reprend là où le premier s'est arrêté.
+        await stream(from: ManifestoPanel.beat,
+                     upTo: StreamedLines.count(ManifestoPanel.head)) { headRevealed = $0 }
 
         guard !Task.isCancelled else { return }
         showsPills = true
-        await pause(.milliseconds(2300))
+        await pause(.milliseconds(1100))
         guard !Task.isCancelled else { return }
 
-        await stream(upTo: StreamedLines.count(ManifestoPanel.tail)) { tailRevealed = $0 }
+        await stream(from: 0, upTo: StreamedLines.count(ManifestoPanel.tail)) { tailRevealed = $0 }
         showsFooter = true
     }
 
@@ -155,10 +164,12 @@ struct ManifestoPanel: View {
         tailRevealed = StreamedLines.count(ManifestoPanel.tail)
         showsPills = true
         showsFooter = true
+        shimmeringLine = nil
     }
 
-    private func stream(upTo total: Int, _ apply: (Int) -> Void) async {
-        for step in 1...max(1, total) {
+    private func stream(from start: Int, upTo total: Int, _ apply: (Int) -> Void) async {
+        guard total > start else { return }
+        for step in (start + 1)...total {
             // Un rejeu annule la mise en scène précédente : sans cette sortie,
             // l'ancienne continuerait d'écrire par-dessus la nouvelle.
             if Task.isCancelled { return }

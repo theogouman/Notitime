@@ -7,7 +7,6 @@ import NotitimeCore
 struct ConnectionStatusView: View {
 
     @ObservedObject var model: OnboardingModel
-    @Environment(\.openWindow) private var openWindow
     @Query private var connections: [NotionConnection]
     @Query private var bindings: [DatabaseBinding]
     @Query private var pending: [OutboxEntry]
@@ -116,11 +115,10 @@ struct ConnectionStatusView: View {
         Button("Se déconnecter") { confirmingDisconnect = true }
             .confirmationDialog(disconnectPrompt, isPresented: $confirmingDisconnect) {
                 Button("Se déconnecter", role: .destructive) {
-                    Task {
-                        await model.disconnect()
-                        WelcomeWindow.present(openWindow)
-                        ConfigurationWindow.close()
-                    }
+                    // Se déconnecter n'est pas s'installer : on reste où l'on
+                    // est, avec le bouton de connexion sous les yeux. L'accueil
+                    // est un premier pas, pas une punition de fin de session.
+                    Task { await model.disconnect() }
                 }
                 Button("Annuler", role: .cancel) {}
             }
