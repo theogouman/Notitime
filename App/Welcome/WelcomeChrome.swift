@@ -18,7 +18,7 @@ struct PrimaryCTA: View {
         Button(action: action) {
             HStack(spacing: 10) {
                 Text(title)
-                    .font(.system(size: 16, weight: .semibold))
+                    .font(.system(size: 17, weight: .medium))
                 if showsNotionLogo {
                     Image("NotionLogo")
                         .renderingMode(.template)
@@ -43,6 +43,9 @@ struct PrimaryCTA: View {
             .contentShape(Capsule())
         }
         .buttonStyle(.plain)
+        // Entrée déclenche l'action principale de l'écran : traverser l'accueil
+        // au clavier doit être possible d'un bout à l'autre.
+        .keyboardShortcut(.defaultAction)
         .onHover { inside in
             guard !reduceMotion else { return hovered = inside }
             withAnimation(Motion.ease(0.18)) { hovered = inside }
@@ -53,12 +56,16 @@ struct PrimaryCTA: View {
 /// Une carte de l'accueil : fond discret, coins continus, liseré léger.
 struct WelcomeCard<Content: View>: View {
     var padding: CGFloat = 20
+    /// Occupe toute la hauteur offerte : deux cartes côte à côte doivent finir
+    /// à la même ligne, quelle que soit la longueur de leur texte.
+    var stretches = false
     @ViewBuilder let content: () -> Content
 
     var body: some View {
         content()
             .padding(padding)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(maxWidth: .infinity, maxHeight: stretches ? .infinity : nil,
+                   alignment: .topLeading)
             .background(
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
                     .fill(Color.primary.opacity(0.05))

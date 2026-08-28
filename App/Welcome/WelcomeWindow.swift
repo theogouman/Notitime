@@ -13,7 +13,7 @@ enum WelcomeWindow {
 
     /// Rectangulaire et large : le texte d'accueil se lit sur des lignes
     /// courtes, et la grille de présentation a besoin de trois colonnes.
-    static let size = CGSize(width: 940, height: 660)
+    static let size = CGSize(width: 1040, height: 720)
 
     @MainActor
     static func window() -> NSWindow? {

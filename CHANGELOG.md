@@ -94,6 +94,10 @@ Comportements visibles par l'utilisateur, dans l'ordre des livraisons.
   présentation, les deux façons de connecter Notion, puis la lecture des bases
   détectées, changeables sur place. Il ne se joue qu'une fois.
 - Terminer l'accueil ferme la fenêtre et ouvre le menu, tâches déjà chargées.
+- Le premier écran s'ouvre sur « Bienvenue dans Notitime », qui s'efface vers le
+  haut pour laisser la place au récit. Celui-ci se dépose plus lentement, avec un
+  silence après la question et un autre après les deux promesses, et se rejoue
+  d'un bouton. Entrée déclenche le bouton principal de chaque écran.
 - Écran d'accueil : logo de l'application, nom, ce qu'elle fait, et un seul
   bouton — « Connecter mon Notion », portant le logo Notion.
 - Cet écran s'ouvre de lui-même au premier lancement et après une déconnexion :

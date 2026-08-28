@@ -19,29 +19,33 @@ struct TemplatePanel: View {
             VStack(spacing: 8) {
                 Staggered(index: 0, shown: shown) {
                     Text("On t'offre le template Notion pour bien t'organiser")
-                        .font(.system(size: 28, weight: .semibold))
+                        .font(.system(size: 34, weight: .medium))
                         .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
                 Staggered(index: 1, shown: shown) {
                     Text("Le système parfait pour organiser tes projets & tâches, avec un dashboard d'analyse du temps passé")
-                        .font(.system(size: 15))
+                        .font(.system(size: 17))
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
-                        .frame(maxWidth: 560)
+                        // Sans cela la phrase se fait rogner au lieu de passer
+                        // à la ligne : SwiftUI la tient pour une ligne unique.
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: 620)
                 }
             }
 
             LazyVGrid(columns: columns, spacing: 14) {
                 ForEach(Array(TemplatePanel.features.enumerated()), id: \.offset) { rank, feature in
                     Staggered(index: rank + 2, shown: shown) {
-                        WelcomeCard {
+                        WelcomeCard(stretches: true) {
                             VStack(alignment: .leading, spacing: 12) {
                                 ImagePlaceholder(symbol: feature.symbol)
                                 VStack(alignment: .leading, spacing: 3) {
                                     Text(feature.title)
-                                        .font(.system(size: 15, weight: .semibold))
+                                        .font(.system(size: 17, weight: .medium))
                                     Text(feature.detail)
-                                        .font(.system(size: 13))
+                                        .font(.system(size: 14))
                                         .foregroundStyle(.secondary)
                                         .fixedSize(horizontal: false, vertical: true)
                                 }
@@ -55,7 +59,7 @@ struct TemplatePanel: View {
                 PrimaryCTA(title: "Démarrer", action: start)
             }
         }
-        .frame(maxWidth: 760)
+        .frame(maxWidth: 860)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .onAppear { shown = true }
     }

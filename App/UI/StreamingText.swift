@@ -1,10 +1,12 @@
 import SwiftUI
+import AppKit
 
 /// Un élément du flux : un mot, ou une image incrustée dans la phrase.
 enum StreamToken {
     case word(String)
     case avatar
     case notionLogo
+    case appLogo
 }
 
 /// Une ligne du flux, avec l'emphase à lui donner.
@@ -41,7 +43,9 @@ struct StreamedLines: View {
                 if line.isBlank {
                     Color.clear.frame(height: 10)
                 } else {
-                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    // L'écart entre les mots suit la taille du texte : un
+                    // espacement fixe paraît juste à 24 pt et bâillant à 17.
+                    HStack(alignment: .firstTextBaseline, spacing: line.size * 0.26) {
                         ForEach(Array(line.tokens.enumerated()), id: \.offset) { position, token in
                             view(token, line: line)
                                 .modifier(Word(isIn: isIn(line, position), reduce: reduceMotion))
@@ -70,16 +74,24 @@ struct StreamedLines: View {
             Text(verbatim: word)
                 .font(.system(size: line.size, weight: line.weight))
         case .avatar:
+            // Le portrait respire dans son cercle : cadré au bord, il se
+            // touchait les côtés et paraissait rogné.
             Image("Avatar")
                 .resizable()
-                .scaledToFill()
-                .frame(width: line.size * 1.5, height: line.size * 1.5)
-                .background(Color.white)
-                .clipShape(Circle())
+                .scaledToFit()
+                .padding(line.size * 0.20)
+                .frame(width: line.size * 1.7, height: line.size * 1.7)
+                .background(Circle().fill(Color.white))
                 .overlay { Circle().strokeBorder(Color.primary.opacity(0.08)) }
                 // Une image n'a pas de ligne de base : on l'aligne sur celle du
                 // texte pour qu'elle se pose dans la phrase, pas à côté.
                 .alignmentGuide(.firstTextBaseline) { $0.height * 0.82 }
+        case .appLogo:
+            Image(nsImage: NSApp.applicationIconImage)
+                .resizable()
+                .scaledToFit()
+                .frame(width: line.size * 1.15, height: line.size * 1.15)
+                .alignmentGuide(.firstTextBaseline) { $0.height * 0.84 }
         case .notionLogo:
             Image("NotionLogo")
                 .renderingMode(.template)

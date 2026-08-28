@@ -16,7 +16,7 @@ struct ReadyPanel: View {
         VStack(spacing: 26) {
             Staggered(index: 0, shown: shown) {
                 Text("Parfait, Notion est bien connecté !")
-                    .font(.system(size: 28, weight: .semibold))
+                    .font(.system(size: 34, weight: .medium))
             }
 
             VStack(alignment: .leading, spacing: 16) {
@@ -27,14 +27,14 @@ struct ReadyPanel: View {
                         Text("qui sont liés à tes")
                         DatabaseChip(model: model, role: .projects)
                     }
-                    .font(.system(size: 17))
+                    .font(.system(size: 22))
                 }
                 Staggered(index: 2, shown: shown) {
                     HStack(spacing: 7) {
                         Text("…Et on enverra ton Time Tracking dans")
                         DatabaseChip(model: model, role: .timeEntries)
                     }
-                    .font(.system(size: 17))
+                    .font(.system(size: 22))
                 }
             }
 
@@ -71,38 +71,44 @@ struct DatabaseChip: View {
 
     var body: some View {
         Menu {
-            if model.accessibleSources.isEmpty {
-                Text("Aucune base partagée avec Notitime")
-            }
-            ForEach(model.accessibleSources) { source in
-                Button(source.name.isEmpty ? "Sans titre" : source.name) {
-                    Task {
-                        await model.assign(dataSourceID: source.id,
-                                           databaseID: source.databaseID,
-                                           name: source.name, to: role,
-                                           changesStep: false)
+            // Un titre au-dessus de la liste : ouvert au milieu d'une phrase,
+            // le menu doit dire de quoi il parle.
+            Section("Quelle base de données ?") {
+                if model.accessibleSources.isEmpty {
+                    Text("Aucune base partagée avec Notitime")
+                }
+                ForEach(model.accessibleSources) { source in
+                    Button(source.name.isEmpty ? "Sans titre" : source.name) {
+                        Task {
+                            await model.assign(dataSourceID: source.id,
+                                               databaseID: source.databaseID,
+                                               name: source.name, to: role,
+                                               changesStep: false)
+                        }
                     }
                 }
             }
         } label: {
-            HStack(spacing: 6) {
+            HStack(spacing: 7) {
                 Image("DatabaseIcon")
                     .renderingMode(.template)
                     .resizable()
                     .scaledToFit()
-                    .frame(width: 15, height: 15)
-                    .foregroundStyle(.secondary)
+                    .frame(width: 17, height: 17)
+                    .foregroundStyle(Color.accentColor)
                 Text(model.bindings[role] ?? "à désigner")
-                    .font(.system(size: 17, weight: .medium))
+                    .font(.system(size: 22, weight: .medium))
                     .foregroundStyle(model.bindings[role] == nil ? Color.orange : Color.primary)
+                // La double flèche dit que le nom se change : sans elle, rien ne
+                // distingue une base liée d'un mot de la phrase.
+                Image(systemName: "arrow.up.and.down")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Color.accentColor.opacity(0.8))
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 5)
-            .background(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(Color.primary.opacity(hovered ? 0.14 : 0.08))
-            )
-            .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .padding(.horizontal, 13)
+            .padding(.vertical, 6)
+            .background(Capsule().fill(Color.accentColor.opacity(hovered ? 0.28 : 0.16)))
+            .contentShape(Capsule())
         }
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
