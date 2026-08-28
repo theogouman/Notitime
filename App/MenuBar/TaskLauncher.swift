@@ -102,6 +102,10 @@ struct TaskLauncher: View {
 
             Spacer(minLength: 0)
         }
+        // Le champ de recherche disparaît en gardant le focus : celui-ci passe
+        // au premier élément focalisable du panneau — l'en-tête — qui héritait
+        // alors de l'anneau bleu, à l'endroit même où était le champ.
+        .focusEffectDisabled()
     }
 
     /// La dernière méthode lancée est mise en avant et déclenchée par Entrée.

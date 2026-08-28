@@ -35,6 +35,12 @@ final class SessionController: ObservableObject {
     @Published private(set) var isPaused = false
     /// Temps écoulé, pour le suivi libre qui n'a pas de compte à rebours.
     @Published private(set) var elapsedLabel = "00:00"
+    /// Durée visée par la session en cours, nulle en suivi libre : c'est elle
+    /// qui donne au cadran la part d'arc à remplir.
+    @Published private(set) var targetSeconds: Int?
+    /// Heure d'échéance, calculée depuis le départ et non depuis l'instant
+    /// présent : recalculée à chaque tick, elle sautillerait d'une seconde.
+    @Published private(set) var endsAt: Date?
     /// Titres des projets, par identifiant de page.
     ///
     /// Le cache de tâches ne retient que l'identifiant du projet : afficher
@@ -466,10 +472,16 @@ final class SessionController: ObservableObject {
             let worked = max(0, environment.time.wallClock
                 .timeIntervalSince(snapshot.startedAt) - paused)
             elapsedLabel = SessionControls.format(.seconds(worked))
+            targetSeconds = snapshot.targetSeconds
+            endsAt = snapshot.targetSeconds.map {
+                snapshot.startedAt.addingTimeInterval(Double($0))
+            }
         } else {
             isTracker = false
             isPaused = false
             elapsedLabel = "00:00"
+            targetSeconds = nil
+            endsAt = nil
         }
         phase = SessionPhase.derive(snapshot: await machine.snapshot,
                                     suggestedBreak: suggestedBreak,

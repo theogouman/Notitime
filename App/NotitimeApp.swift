@@ -122,13 +122,6 @@ final class RootState: ObservableObject {
     /// Une seule lecture de la situation pour toutes les surfaces.
     var readiness: AppReadiness { onboarding?.readiness ?? .needsConnection }
 
-    var workspaceSummary: String {
-        guard let onboarding, !onboarding.workspaceName.isEmpty else {
-            return "Connecté à Notion."
-        }
-        return "Connecté à \(onboarding.workspaceName)."
-    }
-
     /// Cas limite « quitter l'app volontairement » : une session en cours suit
     /// la règle de son mode. On ne quitte jamais en perdant du temps travaillé.
     func requestTermination() {
@@ -214,31 +207,51 @@ struct RootView: View {
                 .buttonStyle(.borderedProminent)
 
             case .ready:
-                summary
+                // Le workspace relié ne se dit plus ici : c'est une information
+                // de réglages, et elle prenait la première ligne du menu à
+                // chaque ouverture pour ne rien apprendre.
                 if let session = state.session {
                     SessionControls(controller: session)
-                    Divider()
                 }
-                Button("Réglages…") { ConfigurationWindow.present(openWindow) }
             }
 
             Divider()
-            Button("Quitter") { state.requestTermination() }
-                .keyboardShortcut("q")
+            HStack {
+                Spacer()
+                options
+            }
         }
         .padding(12)
         .frame(width: 280)
+    }
+
+    /// Réglages et Quitter, repliés derrière un seul bouton.
+    ///
+    /// Deux boutons pleine largeur pour des commandes qu'on emploie une fois
+    /// par jour prenaient autant de place que ce qui sert à chaque ouverture.
+    private var options: some View {
+        Menu {
+            Button { ConfigurationWindow.present(openWindow) } label: {
+                Label("Réglages…", systemImage: "gear")
+            }
+            Divider()
+            Button { state.requestTermination() } label: {
+                Label("Quitter", systemImage: "xmark.circle")
+            }
+            .keyboardShortcut("q")
+        } label: {
+            Image(systemName: "ellipsis.circle")
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .accessibilityLabel("Autres options")
     }
 
     @ViewBuilder
     private var summary: some View {
         if state.onboarding == nil {
             Text("Notitime n'a pas pu démarrer.").font(.callout)
-        } else if state.isConfigured {
-            Text(state.workspaceSummary)
-                .font(.callout)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
         } else {
             Text("Connecté, mais il reste des bases à désigner.")
                 .font(.callout)

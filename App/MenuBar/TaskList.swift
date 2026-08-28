@@ -32,6 +32,9 @@ struct TaskList: View {
             }
         }
         .onAppear { searchFocused = true }
+        // Rendre le focus en partant : un champ qui disparaît focalisé le lègue
+        // à ce qui prend sa place, avec l'anneau bleu qui va avec.
+        .onDisappear { searchFocused = false }
     }
 
     private var highlightedTask: CachedTaskItem? {

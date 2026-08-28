@@ -25,9 +25,13 @@ struct SessionControls: View {
 
             case .running(let remaining, let taskPageID):
                 Text(controller.title(of: taskPageID)).font(.callout).lineLimit(1)
-                countdown(remaining == nil ? controller.elapsedLabel
-                                           : SessionControls.format(remaining),
-                          countsDown: remaining != nil)
+                // Un Pomodoro a une échéance : le cadran la montre. Un suivi
+                // libre n'en a pas — un anneau y serait une promesse fausse.
+                if let remaining {
+                    ring(remaining)
+                } else {
+                    countdown(controller.elapsedLabel, countsDown: false)
+                }
                 HStack(spacing: 6) {
                     // FR-018 : le Pomodoro n'offre pas de pause ; le Tracker si.
                     if controller.isTracker {
@@ -52,7 +56,7 @@ struct SessionControls: View {
 
             case .onBreak(let remaining, let isLong):
                 Text(isLong ? "Pause longue" : "Pause").font(.callout)
-                countdown(SessionControls.format(remaining))
+                ring(remaining)
                 HStack(spacing: 6) {
                     // US2.2 : on doit pouvoir repartir immédiatement.
                     Button("Repartir") { Task { await resume() } }
@@ -80,6 +84,21 @@ struct SessionControls: View {
                 failure(entry)
             }
         }
+    }
+
+    /// Le cadran d'une durée visée : temps restant au centre, part d'arc pour
+    /// ce qu'il en reste.
+    private func ring(_ remaining: Duration) -> some View {
+        TimerRing(label: SessionControls.format(remaining),
+                  progress: fraction(remaining),
+                  endsAt: controller.endsAt)
+    }
+
+    /// Part restante. Sans cible connue l'anneau reste plein : mieux vaut un
+    /// anneau qui n'informe pas qu'un anneau qui annonce l'échéance à tort.
+    private func fraction(_ remaining: Duration) -> Double {
+        guard let target = controller.targetSeconds, target > 0 else { return 1 }
+        return min(1, max(0, remaining.seconds / Double(target)))
     }
 
     /// Le temps qui passe : chaque chiffre remplacé glisse vers le bas plutôt
