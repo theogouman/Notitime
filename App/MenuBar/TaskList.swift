@@ -22,7 +22,7 @@ struct TaskList: View {
                 .textFieldStyle(.roundedBorder)
                 .focused($searchFocused)
                 .onChange(of: query) { _, text in Task { await controller.search(text) } }
-                .onSubmit { if let task = highlightedTask ?? controller.tasks.first { select(task) } }
+                .onSubmit { if let task = highlightedTask ?? controller.tasks.first { choose(task) } }
 
             if controller.isLoadingTasks || controller.tasks.isEmpty {
                 TaskListStates(controller: controller, query: $query)
@@ -32,9 +32,17 @@ struct TaskList: View {
             }
         }
         .onAppear { searchFocused = true }
-        // Rendre le focus en partant : un champ qui disparaît focalisé le lègue
-        // à ce qui prend sa place, avec l'anneau bleu qui va avec.
-        .onDisappear { searchFocused = false }
+    }
+
+    /// Rendre le focus **avant** de changer de panneau.
+    ///
+    /// Les deux panneaux se croisent en fondu : un champ encore focalisé au
+    /// départ emporte son anneau bleu dans la transition, et celui-ci reste
+    /// visible par-dessus le panneau de méthode le temps de l'animation. Le
+    /// rendre en partant arrivait trop tard, précisément pour cette raison.
+    private func choose(_ task: CachedTaskItem) {
+        searchFocused = false
+        select(task)
     }
 
     private var highlightedTask: CachedTaskItem? {
@@ -82,7 +90,7 @@ struct TaskList: View {
 
     @ViewBuilder
     private func row(_ task: CachedTaskItem) -> some View {
-        Button { select(task) } label: {
+        Button { choose(task) } label: {
             HStack(spacing: 6) {
                 VStack(alignment: .leading, spacing: 1) {
                     Text(task.title)

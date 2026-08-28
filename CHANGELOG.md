@@ -49,6 +49,10 @@ Comportements visibles par l'utilisateur, dans l'ordre des livraisons.
 - L'icône du workspace Notion ne surgit plus une fois téléchargée : un squelette
   occupe sa place, bat une fois, puis lui cède par un fondu croisé.
 - Ces trois animations s'effacent quand le système demande moins de mouvement.
+- L'emplacement dans la barre de menus a une largeur fixe : il ne se réajuste
+  plus au démarrage et à l'arrêt d'une session.
+- L'anneau bleu du champ de recherche ne traverse plus la transition vers le
+  panneau de méthode : le champ rend le focus avant qu'elle ne commence.
 - Une session Pomodoro et une pause s'affichent sur un cadran : anneau qui se
   rétracte, heure de sonnerie et temps restant au centre. Le suivi libre garde
   son seul compteur — il n'a pas d'échéance à promettre.

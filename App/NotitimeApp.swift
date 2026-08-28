@@ -269,6 +269,10 @@ struct RootView: View {
 /// ne peut porter que sa silhouette : la décliner par état la rendrait moins
 /// reconnaissable sans rien gagner en information, que le texte porte déjà.
 struct MenuBarLabel: View {
+
+    /// Largeur de l'emplacement dans la barre de menus.
+    static let width: CGFloat = 120
+
     @ObservedObject var state: RootState
     @Environment(\.openWindow) private var openWindow
     /// Retenu par la vue : un moniteur d'événements libéré cesse d'observer.
@@ -287,6 +291,10 @@ struct MenuBarLabel: View {
                     .monospacedDigit()
             }
         }
+        // Largeur fixe, réservée même au repos : l'emplacement ne se réajuste
+        // plus au démarrage et à l'arrêt d'une session — les icônes voisines
+        // restaient sinon à leur place, mais la nôtre glissait sous le curseur.
+        .frame(width: MenuBarLabel.width)
         .accessibilityLabel(accessibilityLabel)
         .onAppear {
             // Premier lancement ou déconnexion : il n'y a rien à faire dans le
