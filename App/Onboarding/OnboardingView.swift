@@ -54,10 +54,10 @@ struct OnboardingView: View {
                     Image(systemName: model.bindings[role] != nil
                           ? "checkmark.circle.fill" : "circle.dashed")
                         .foregroundStyle(model.bindings[role] != nil ? .green : .secondary)
-                    Text(roleLabel(role)).font(.caption)
+                    Text(roleLabel(role)).font(Typography.caption)
                     if let source = model.bindings[role] {
                         Text("— \(source)")
-                            .font(.caption)
+                            .font(Typography.caption)
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
                     }
@@ -69,7 +69,7 @@ struct OnboardingView: View {
 
     @ViewBuilder
     private var assignment: some View {
-        Text("Désigner vos bases").font(.headline)
+        Text("Désigner vos bases").font(Typography.heading)
         roleStatus
 
         if let outcome = model.outcome {
@@ -77,9 +77,9 @@ struct OnboardingView: View {
             ForEach(outcome.sourceChoices, id: \.databaseID) { choice in
                 VStack(alignment: .leading, spacing: 4) {
                     Text("« \(choice.databaseTitle) » contient plusieurs sources de données.")
-                        .font(.callout)
+                        .font(Typography.body)
                     Text("Choisissez celle qui porte vos données.")
-                        .font(.caption)
+                        .font(Typography.caption)
                         .foregroundStyle(.secondary)
                     ForEach(choice.sources, id: \.id) { source in
                         Button(source.name) {
@@ -96,7 +96,7 @@ struct OnboardingView: View {
 
             ForEach(Array(outcome.unresolved.keys), id: \.self) { role in
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(roleLabel(role)).font(.callout).bold()
+                    Text(roleLabel(role)).font(Typography.control)
                     ForEach(outcome.unresolved[role] ?? [], id: \.dataSourceID) { candidate in
                         Button(candidate.dataSourceName) {
                             Task {
@@ -116,9 +116,9 @@ struct OnboardingView: View {
             if let missing = model.missingByRole[role], !missing.isEmpty {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Propriétés manquantes dans \(roleLabel(role))")
-                        .font(.callout).bold()
+                        .font(Typography.control)
                     Text(missing.map(\.rawValue).joined(separator: ", "))
-                        .font(.caption)
+                        .font(Typography.caption)
                         .foregroundStyle(.secondary)
                 }
             }
@@ -130,9 +130,9 @@ struct OnboardingView: View {
     @ViewBuilder
     private var nothingFound: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Aucune base détectée").font(.headline)
+            Text("Aucune base détectée").font(Typography.heading)
             Text(model.emptyReason)
-                .font(.callout)
+                .font(Typography.body)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 
@@ -149,7 +149,7 @@ struct OnboardingView: View {
 
             Text("Si la duplication vient d'avoir lieu, laissez à Notion quelques "
                  + "secondes puis réessayez.")
-                .font(.caption)
+                .font(Typography.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -159,7 +159,7 @@ struct OnboardingView: View {
     @ViewBuilder
     private var manualSelection: some View {
         HStack {
-            Text("Choisir mes bases").font(.headline)
+            Text("Choisir mes bases").font(Typography.heading)
             Spacer()
             // Sortie toujours offerte dès que l'essentiel est lié : sans elle,
             // cet écran retenait l'utilisateur.
@@ -173,14 +173,14 @@ struct OnboardingView: View {
             // Deuxième impasse possible : ne pas la laisser muette non plus.
             Text("Aucune source de données n'est partagée avec Notitime. Ouvrez la "
                  + "page de vos bases dans Notion, puis « Connexions » → Notitime.")
-                .font(.callout)
+                .font(Typography.body)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             Button("Réessayer") { Task { await model.browseAccessibleSources() } }
         } else {
             ForEach(rolesToBind, id: \.self) { role in
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(roleLabel(role)).font(.callout).bold()
+                    Text(roleLabel(role)).font(Typography.control)
                     ForEach(model.accessibleSources) { source in
                         Button(source.name.isEmpty ? "Sans titre" : source.name) {
                             Task {
@@ -194,7 +194,7 @@ struct OnboardingView: View {
                     if let missing = model.missingByRole[role], !missing.isEmpty {
                         Text("Propriétés manquantes : "
                              + missing.map(\.rawValue).joined(separator: ", "))
-                            .font(.caption)
+                            .font(Typography.caption)
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
@@ -216,9 +216,9 @@ struct OnboardingView: View {
 
     private func failure(_ message: String) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Connexion impossible").font(.headline)
+            Text("Connexion impossible").font(Typography.heading)
             Text(message)
-                .font(.callout)
+                .font(Typography.body)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             Button("Réessayer") { Task { await model.connect() } }

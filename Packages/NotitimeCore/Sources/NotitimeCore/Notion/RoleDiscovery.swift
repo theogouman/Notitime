@@ -159,9 +159,13 @@ public struct RoleDiscovery: Sendable {
 
     /// Toutes les sources accessibles, sans filtre de schéma, pour la désignation
     /// manuelle proposée quand la détection automatique n'a rien remonté.
+    ///
+    /// Sans trace au journal : la feuille de choix appelle cette lecture chaque
+    /// seconde tant qu'elle est ouverte, et une ligne par appel chassait du
+    /// journal tout ce qui s'y passe d'autre. C'est l'appelant qui note les
+    /// changements.
     public func allAccessibleSources() async throws -> [AccessibleSource] {
         let sources = try await client.searchDataSources()
-        await log?.log(.sync, "sources accessibles pour choix manuel=\(sources.count)")
         return sources.map {
             AccessibleSource(id: $0.id, name: $0.title, databaseID: $0.databaseID)
         }

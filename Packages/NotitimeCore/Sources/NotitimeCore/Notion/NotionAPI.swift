@@ -53,6 +53,11 @@ public enum NotionAPI {
         }
 
         public static let pages = "/v1/pages"
+
+        /// Une page existante : lecture et modification de ses propriétés.
+        public static func page(_ pageID: String) -> String {
+            "/v1/pages/\(pageID)"
+        }
         public static let comments = "/v1/comments"
         public static let search = "/v1/search"
     }

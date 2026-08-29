@@ -15,16 +15,47 @@ final class SessionController: ObservableObject {
     /// tant qu'elle n'est pas acceptée, la machine ne tient aucune session.
     private var suggestedBreak: BreakKind?
     @Published private(set) var tasks: [CachedTaskItem] = []
+    /// Une création est en cours : la ligne en cours d'écriture attend Notion.
+    @Published private(set) var isCreatingTask = false
+    /// Les projets, les plus récemment actifs en tête (voir `ProjectDirectory`).
+    @Published private(set) var projects: [ProjectSummary] = []
     /// Identifiants des tâches récentes, affichées en tête (FR-014).
     @Published private(set) var recentIDs: Set<String> = []
     @Published private(set) var lastSync: Date?
     @Published private(set) var isLoadingTasks = false
-    /// Message court affiché sous le menu : issue du dernier envoi, refus, etc.
-    @Published private(set) var notice: String?
+    /// La dernière annonce faite à l'utilisateur : issue d'un envoi, refus,
+    /// session retrouvée. Elle vit hors du panneau, le temps d'être lue.
+    @Published private(set) var toast: Toast?
+    /// Ce que la liste de tâches a à dire d'elle-même quand elle est vide ou
+    /// périmée. C'est un **état**, pas un événement : il reste tant qu'il est
+    /// vrai, et n'a donc rien à faire dans une annonce fugitive.
+    @Published private(set) var taskListMessage: String?
+
+    /// Une annonce, et rien de plus : un texte, et une identité qui change à
+    /// chaque fois pour que deux annonces identiques se distinguent.
+    struct Toast: Identifiable, Equatable {
+        let id = UUID()
+        let text: String
+    }
+
+    /// Annonce un fait à l'utilisateur. Ce qui est annoncé disparaît de
+    /// lui-même : rien de ce qui passe ici ne doit rester à l'écran.
+    private func announce(_ text: String) {
+        toast = Toast(text: text)
+    }
     @Published private(set) var pendingCount = 0
     @Published var selectedTaskID: String?
+    /// Tâche dépliée dans le lanceur — le panneau de méthode est ouvert.
+    ///
+    /// Elle vivait dans la vue ; c'est la taille de la fenêtre qui l'en a sortie :
+    /// le panneau se règle sur l'écran affiché, et il ne peut pas deviner l'état
+    /// interne d'une de ses sous-vues.
+    @Published var expandedTaskID: String?
     /// Session close en attente d'arbitrage d'inactivité (FR-024).
     @Published private(set) var idleArbitration: CompletedSession?
+    /// Session qui vient de produire une entrée, tant que l'écran de fin n'a pas
+    /// été quitté (US4, US6, FR-026, FR-030).
+    @Published private(set) var completion: SessionCompletion?
     @Published private(set) var searchText: String = ""
     /// Entrées en échec définitif, consultables et réassignables (FR-030, FR-031).
     @Published private(set) var failedEntries: [OutboxEntry] = []
@@ -35,6 +66,8 @@ final class SessionController: ObservableObject {
     @Published private(set) var isPaused = false
     /// Temps écoulé, pour le suivi libre qui n'a pas de compte à rebours.
     @Published private(set) var elapsedLabel = "00:00"
+    /// Depuis combien de temps la session est en pause, `nil` si elle tourne.
+    @Published private(set) var pausedLabel: String?
     /// Durée visée par la session en cours, nulle en suivi libre : c'est elle
     /// qui donne au cadran la part d'arc à remplir.
     @Published private(set) var targetSeconds: Int?
@@ -58,6 +91,12 @@ final class SessionController: ObservableObject {
     private var systemObserver: WorkspaceEventObserver?
     private var idleMonitor: EventInactivityMonitor?
     private var cache: TaskCache?
+    /// La prochaine remise d'entrée doit-elle ouvrir l'écran de fin ? Posé par
+    /// `handleCompletion`, lu par `deliver` — l'arbitrage d'inactivité passe
+    /// entre les deux (FR-024).
+    private var confirmsCompletion = true
+    /// L'écran de fin doit survivre à la prochaine fermeture du panneau.
+    private var completionHeld = false
     private var drainTask: Task<Void, Never>?
     private var refreshTask: Task<Void, Never>?
 
@@ -114,10 +153,68 @@ final class SessionController: ObservableObject {
     /// Le menu ouvert est le signal qu'une interaction est en cours.
     var menuIsOpen = false
 
+    /// Crée une tâche dans Notion depuis le menu, et la place en tête de liste.
+    ///
+    /// La liste ne se recharge pas pour l'accueillir : un rafraîchissement
+    /// complet coûterait une seconde et ferait clignoter tout ce qui est
+    /// affiché, alors qu'on sait exactement ce qui vient de naître.
+    @discardableResult
+    func createTask(titled title: String,
+                    projectPageID: String? = nil,
+                    due: Date? = nil) async -> CachedTaskItem? {
+        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        guard let cache else {
+            announce("La base Tâches n'est pas encore liée. Ouvrez les réglages.")
+            return nil
+        }
+        isCreatingTask = true
+        defer { isCreatingTask = false }
+        do {
+            let created = try await cache.createTask(titled: trimmed,
+                                                     projectPageID: projectPageID,
+                                                     due: due)
+            tasks.removeAll { $0.id == created.id }
+            tasks.insert(created, at: 0)
+            // Elle est prête à être lancée : c'est ce pour quoi on vient de
+            // l'écrire.
+            selectedTaskID = created.id
+            return created
+        } catch {
+            await environment.log.log(.error, "création de tâche en échec : \(error)")
+            announce("La tâche n'a pas pu être créée dans Notion.")
+            return nil
+        }
+    }
+
+    /// Charge les projets pour la ligne en cours d'écriture.
+    ///
+    /// À la demande, et une seule fois : la liste n'est utile qu'au moment de
+    /// rattacher une tâche, et une requête à chaque ouverture du menu coûterait
+    /// le quota pour une information qui bouge peu.
+    func loadProjects() async {
+        guard projects.isEmpty, let binding = binding(for: .projects) else { return }
+        let directory = ProjectDirectory(client: environment.notion,
+                                         mapper: PropertyMapper(map: binding.propertyRefs),
+                                         log: environment.log)
+        do {
+            projects = try await directory.load(from: binding.dataSourceID)
+            // Les noms servent aussi à la liste des tâches : autant les tenir
+            // du même chargement.
+            for project in projects where projectNames[project.id] == nil {
+                projectNames[project.id] = project.name
+            }
+        } catch {
+            // Le projet est un complément : son absence ne doit jamais empêcher
+            // d'écrire une tâche.
+            await environment.log.log(.error, "chargement des projets en échec : \(error)")
+        }
+    }
+
     /// FR-015 — sans tâche, aucune session. Le menu doit donc pouvoir en offrir.
     func loadTasks() async {
         guard let binding = binding(for: .tasks) else {
-            notice = "La base Tâches n'est pas encore liée. Ouvrez les réglages."
+            announce("La base Tâches n'est pas encore liée. Ouvrez les réglages.")
             return
         }
         isLoadingTasks = true
@@ -149,7 +246,7 @@ final class SessionController: ObservableObject {
             tasks = recents + all.filter { item in !recents.contains { $0.id == item.id } }
             recentIDs = Set(recents.map(\.id))
             lastSync = await cache.lastSuccessfulSync
-            notice = tasks.isEmpty ? emptyTaskMessage(filters) : nil
+            taskListMessage = tasks.isEmpty ? emptyTaskMessage(filters) : nil
             if selectedTaskID == nil { selectedTaskID = tasks.first?.id }
             await loadProjectNames()
         } catch {
@@ -157,7 +254,7 @@ final class SessionController: ObservableObject {
             // FR-015a — le cache reste utilisable, et l'utilisateur sait de
             // quand datent les tâches affichées.
             let stamp = lastSync.map { SessionController.timeFormatter.string(from: $0) }
-            notice = stamp.map { "Notion est injoignable. Tâches synchronisées à \($0)." }
+            taskListMessage = stamp.map { "Notion est injoignable. Tâches synchronisées à \($0)." }
                 ?? "Notion est injoignable et aucune synchronisation n'a encore abouti."
         }
     }
@@ -229,9 +326,9 @@ final class SessionController: ObservableObject {
         if !searchText.trimmingCharacters(in: .whitespaces).isEmpty {
             return "Aucune tâche ne correspond à cette recherche."
         }
-        if filters.currentUserID != nil && !filters.includeUnassigned {
-            return "Aucune tâche non terminée ne vous est assignée. "
-                 + "Activez « tâches non assignées » dans les réglages."
+        if filters.onlyAssignedToMe {
+            return "Aucune tâche non terminée ne vous est assignée. Décochez "
+                 + "« n'afficher que mes tâches » dans les réglages pour voir toute la base."
         }
         return "Aucune tâche non terminée dans la base liée."
     }
@@ -256,21 +353,145 @@ final class SessionController: ObservableObject {
         return formatter
     }()
 
+    /// L'écran affiché est-il la liste des tâches ?
+    ///
+    /// C'est le seul écran qui a besoin de place : tous les autres tiennent dans
+    /// un panneau étroit (voir `RootView.listSize` et `compactSize`).
+    var showsTaskList: Bool {
+        guard case .idle = phase else { return false }
+        return completion == nil && idleArbitration == nil && expandedTaskID == nil
+    }
+
+    // MARK: - Fin de session (US4, US6)
+
+    /// Ce qu'il reste à dire d'une session qui vient de se terminer : ce qu'elle
+    /// a duré, sur quoi, et où en est son entrée.
+    ///
+    /// Elle ne vit que le temps du panneau ouvert : rien n'en est persisté, et
+    /// la file reste seule source de vérité sur l'envoi (FR-027).
+    struct SessionCompletion: Equatable {
+
+        /// L'entrée correspondante dans la file — c'est par lui que l'écran
+        /// apprend qu'un envoi différé a fini par aboutir.
+        let localID: UUID
+        let taskPageID: String
+        let taskTitle: String
+        let minutes: Int
+        let mode: SessionMode
+        var delivery: Delivery
+
+        /// Où en est l'entrée. `sent` porte l'adresse de la page créée, quand
+        /// l'identifiant rendu par l'envoi permet de la former.
+        enum Delivery: Equatable {
+            case sending
+            case sent(URL?)
+            case pending
+
+            /// Une identité par état : c'est elle qui déclenche la transition
+            /// d'un texte à l'autre.
+            var id: String {
+                switch self {
+                case .sending: return "sending"
+                case .sent: return "sent"
+                case .pending: return "pending"
+                }
+            }
+        }
+    }
+
+    /// L'adresse d'une page à partir de son identifiant.
+    ///
+    /// L'envoi rend l'identifiant de la page créée, pas son adresse : Notion
+    /// accepte l'identifiant nu dans une URL et redirige vers la page.
+    static func pageURL(_ pageID: String) -> URL? {
+        let identifier = pageID.replacingOccurrences(of: "-", with: "")
+        guard !identifier.isEmpty else { return nil }
+        return URL(string: "https://www.notion.so/\(identifier)")
+    }
+
+    /// Quitte l'écran de fin. Aucun effet de bord : l'entrée suit son cours.
+    func dismissCompletion() {
+        completion = nil
+        completionHeld = false
+    }
+
+    /// Retient l'écran de fin par-dessus la prochaine fermeture du panneau.
+    ///
+    /// Ouvrir l'entrée dans Notion fait passer le premier plan au navigateur, ce
+    /// qui referme le panneau — au retour, l'écran avait disparu et le menu
+    /// affichait la liste, comme si la session n'avait jamais eu lieu. Partir
+    /// **consulter** ce qu'on vient d'enregistrer n'est pas en avoir fini.
+    func holdCompletion() {
+        completionHeld = true
+    }
+
+    /// Le panneau vient de se refermer : l'écran de fin s'en va avec lui, sauf
+    /// s'il a été retenu — auquel cas il ne l'est plus que cette fois-là.
+    func panelDidClose() {
+        guard completion != nil else { return }
+        if completionHeld { completionHeld = false } else { dismissCompletion() }
+    }
+
+    /// « J'ai terminé ma tâche » : le statut passe à « terminé » dans Notion, la
+    /// tâche quitte la liste, et l'écran de fin rend la main.
+    ///
+    /// L'écriture n'est pas mise en file : contrairement à une entrée de temps,
+    /// une tâche cochée par erreur se décoche dans Notion, et rien n'est perdu
+    /// si l'appel échoue — on le dit, et la tâche reste ouverte.
+    func finishTask() async {
+        guard let completion else { return }
+        let pageID = completion.taskPageID
+        dismissCompletion()
+        guard let cache else {
+            return announce("La base Tâches n'est pas encore liée. Ouvrez les réglages.")
+        }
+        do {
+            let value = try await cache.markDone(pageID)
+            tasks.removeAll { $0.id == pageID }
+            if selectedTaskID == pageID { selectedTaskID = tasks.first?.id }
+            announce("Tâche marquée « \(value) » dans Notion")
+        } catch let refusal as TaskCache.CompletionRefusal {
+            await environment.log.log(.error, "tâche non marquée=\(pageID) : \(refusal)")
+            announce("Cette base ne dit pas ce que veut dire « terminé » : "
+                     + "renseigne un statut de fin dans les réglages")
+        } catch {
+            await environment.log.log(.error, "tâche non marquée=\(pageID) : \(error)")
+            announce("La tâche n'a pas pu être marquée comme terminée dans Notion")
+        }
+    }
+
+    /// Relance une session sur la même tâche, avec la dernière méthode retenue.
+    func relaunch() async {
+        guard let completion else { return }
+        selectedTaskID = completion.taskPageID
+        // À défaut de méthode mémorisée, celle qu'on vient d'employer : c'est
+        // « relancer », pas « choisir ».
+        let method = lastMethod ?? (mode: completion.mode, minutes: nil)
+        expandedTaskID = nil
+        dismissCompletion()
+        switch method.mode {
+        case .pomodoro: await startPomodoro(minutes: method.minutes)
+        case .tracker: await startTracker()
+        }
+    }
+
+    /// Fait passer l'écran de fin à l'état d'envoi suivant.
+    private func setDelivery(_ delivery: SessionCompletion.Delivery, for localID: UUID) {
+        guard completion?.localID == localID else { return }
+        completion?.delivery = delivery
+    }
+
     // MARK: - Session
 
     func startPomodoro(minutes: Int? = nil) async {
         guard isConnected else { return refuseWithoutConnection() }
         guard let taskID = selectedTaskID, !taskID.isEmpty else {
-            notice = "Choisissez d'abord une tâche."
+            announce("Tu dois d'abord sélectionner une tâche")
             return
         }
         suggestedBreak = nil
         await cache?.noteUse(of: taskID)
-        // FR-034 — le mode Concentration est un confort : son échec ne doit
-        // jamais retarder ni empêcher le démarrage du chronomètre.
-        let shortcut = (try? environment.container.mainContext
-            .fetch(FetchDescriptor<AppSettings>()).first)?.focusShortcutName
-        await FocusModeService.run(shortcutNamed: shortcut, log: environment.log)
+        await beginFocus()
         let chosen = minutes ?? settings.pomodoroSeconds / 60
         rememberMethod(.pomodoro, minutes: chosen)
         let target = Duration.seconds(chosen * 60)
@@ -283,12 +504,15 @@ final class SessionController: ObservableObject {
     func startTracker() async {
         guard isConnected else { return refuseWithoutConnection() }
         guard let taskID = selectedTaskID, !taskID.isEmpty else {
-            notice = "Choisissez d'abord une tâche."
+            announce("Tu dois d'abord sélectionner une tâche")
             return
         }
         suggestedBreak = nil
         rememberMethod(.tracker, minutes: nil)
         await cache?.noteUse(of: taskID)
+        // Le suivi libre est une session comme une autre : ce qui vaut pour le
+        // pomodoro vaut pour lui.
+        await beginFocus()
         await react(to: await machine.handle(.start(taskPageID: taskID, mode: .tracker,
                                                     target: nil)))
         startTicking()
@@ -310,6 +534,27 @@ final class SessionController: ObservableObject {
             return
         }
         await react(to: await machine.handle(.stopByUser))
+    }
+
+    // MARK: - Mode Concentration (FR-034)
+
+    /// Demande à macOS d'entrer en Concentration, si l'option est active.
+    ///
+    /// Le mode Concentration est un confort : son échec ne doit jamais retarder
+    /// ni empêcher le démarrage du chronomètre — c'est pourquoi `FocusModeService`
+    /// n'attend pas la fin du raccourci et ne remonte rien.
+    private func beginFocus() async {
+        guard let settings = storedSettings, settings.focusModeEnabled else { return }
+        await FocusModeService.run(shortcutNamed: settings.focusShortcutName,
+                                   log: environment.log)
+    }
+
+    /// Rend la main à la fin de la session. Sans ce second raccourci, la
+    /// concentration s'activerait sans jamais se désactiver.
+    private func endFocus() async {
+        guard let settings = storedSettings, settings.focusModeEnabled else { return }
+        await FocusModeService.run(shortcutNamed: settings.focusEndShortcutName,
+                                   log: environment.log)
     }
 
     /// L'utilisateur décline la pause proposée.
@@ -334,11 +579,13 @@ final class SessionController: ObservableObject {
             break
         case .closed(let session):
             // Un pomodoro interrompu par un arrêt inopiné produit quand même son
-            // entrée : le temps a bien été travaillé (principe IV).
-            notice = "Session précédente retrouvée et clôturée."
-            await handleCompletion(session)
+            // entrée : le temps a bien été travaillé (principe IV). L'écran de
+            // fin, lui, n'a pas lieu d'être : la session s'est achevée hors de
+            // la vue de l'utilisateur, souvent des heures plus tôt.
+            announce("Session précédente retrouvée et clôturée.")
+            await handleCompletion(session, confirms: false)
         case .paused:
-            notice = "Suivi libre retrouvé, en pause. Reprenez ou arrêtez."
+            announce("Suivi libre retrouvé, en pause. Reprenez ou arrêtez.")
             startTicking()
         }
         await refreshPhase()
@@ -401,17 +648,18 @@ final class SessionController: ObservableObject {
             await refreshPhase()
 
         case .refused(let reason):
-            notice = SessionController.message(for: reason)
+            announce(SessionController.message(for: reason))
 
-        case .ignored(let seconds):
+        case .ignored:
             // FR-023 : l'utilisateur doit savoir pourquoi rien n'est parti.
-            notice = "Session de \(seconds) s ignorée : moins d'une minute, rien n'a été envoyé."
+            announce("La session était trop courte, ça n'a pas été enregistré dans Notion")
             stopTicking()
+            await endFocus()
             await refreshPhase()
 
         case .breakEnded:
             suggestedBreak = nil
-            notice = "Pause terminée."
+            announce("La pause est terminée, on reprend ?")
             stopTicking()
             await refreshPhase()
             if notificationsAllowed { await notifications.breakFinished(isLong: false) }
@@ -421,6 +669,9 @@ final class SessionController: ObservableObject {
             // la tâche annulée : `URLSession` l'abandonnait aussitôt. On détache
             // l'arrêt du minuteur de la suite du traitement.
             stopTicking()
+            // La concentration s'arrête avec la session, avant même que
+            // l'entrée ne parte : rendre la main ne doit pas attendre Notion.
+            await endFocus()
             await refreshPhase()
             // FR-032 : prévenir d'abord, envoyer ensuite. L'utilisateur n'a pas
             // à attendre que Notion réponde pour savoir que son pomodoro est fini.
@@ -429,12 +680,19 @@ final class SessionController: ObservableObject {
                     taskTitle: title(of: session.taskPageID),
                     minutes: EntryComposer.minutes(session.effectiveSeconds))
             }
-            await handleCompletion(session)
+            // L'écran de fin est réservé aux arrêts qui produisent une entrée
+            // sans autre suite : un pomodoro allé à son terme a déjà le sien,
+            // qui propose la pause (FR-020).
+            await handleCompletion(session,
+                                   confirms: !(session.mode == .pomodoro
+                                               && session.outcome == .ranToTerm))
             suggestedBreak = suggestion
             await refreshPhase()
-            if let suggestion {
-                notice = suggestion.isLong ? "Pomodoro terminé. Pause longue proposée."
-                                           : "Pomodoro terminé. Pause courte proposée."
+            // Une pause proposée signe un pomodoro allé au bout : c'est le seul
+            // cas où l'on félicite, et la durée dit ce qui a été tenu.
+            if suggestion != nil {
+                announce("Bravo, les \(EntryComposer.minutes(session.effectiveSeconds)) min "
+                         + "de pomodoro sont atteints")
             }
         }
     }
@@ -443,15 +701,17 @@ final class SessionController: ObservableObject {
     /// la machine et n'est jamais posée à la main.
     /// FR-024 — une inactivité détectée se tranche **avant** la mise en file :
     /// on ne devine pas si l'utilisateur lisait ou s'était absenté.
-    private func handleCompletion(_ session: CompletedSession) async {
+    private func handleCompletion(_ session: CompletedSession,
+                                  confirms: Bool = true) async {
         idleMonitor?.stop()
+        confirmsCompletion = confirms
         guard session.pendingIdleSeconds > 0 else {
             await deliver(session)
             return
         }
+        // L'arbitrage a son propre écran, avec ses deux boutons : le redire en
+        // annonce laissait un message sans fin de vie dans tous les écrans.
         idleArbitration = session
-        notice = "\(EntryComposer.minutes(session.pendingIdleSeconds)) min d'inactivité "
-               + "détectées. Les conserver ou les retrancher ?"
     }
 
     func resolveIdle(subtract: Bool) async {
@@ -474,13 +734,15 @@ final class SessionController: ObservableObject {
         if let snapshot = await machine.snapshot {
             isTracker = snapshot.mode == .tracker && !snapshot.isBreak
             isPaused = snapshot.state == .paused
-            let paused = snapshot.pauseIntervals.reduce(0.0) { total, interval in
-                total + max(0, min(interval.end, environment.time.wallClock)
-                    .timeIntervalSince(interval.start))
-            }
-            let worked = max(0, environment.time.wallClock
-                .timeIntervalSince(snapshot.startedAt) - paused)
+            let now = environment.time.wallClock
+            let worked = max(0, now.timeIntervalSince(snapshot.startedAt)
+                             - snapshot.pausedSeconds(until: now))
             elapsedLabel = SessionControls.format(.seconds(worked))
+            // Indicatif, et rien d'autre : cette durée ne part pas dans Notion,
+            // elle dit seulement depuis combien de temps on s'est arrêté.
+            pausedLabel = snapshot.pausedSince.map { since in
+                SessionControls.format(.seconds(max(0, now.timeIntervalSince(since))))
+            }
             targetSeconds = snapshot.targetSeconds
             endsAt = snapshot.targetSeconds.map {
                 snapshot.startedAt.addingTimeInterval(Double($0))
@@ -489,6 +751,7 @@ final class SessionController: ObservableObject {
             isTracker = false
             isPaused = false
             elapsedLabel = "00:00"
+            pausedLabel = nil
             targetSeconds = nil
             endsAt = nil
         }
@@ -503,12 +766,21 @@ final class SessionController: ObservableObject {
     /// source de vérité : rien n'est retiré avant confirmation (FR-027).
     private func deliver(_ session: CompletedSession) async {
         guard let binding = binding(for: .timeEntries) else {
-            notice = "La base Time Entries n'est pas liée : l'entrée n'a pas pu être composée."
+            announce("La base Time Entries n'est pas liée : l'entrée n'a pas pu être composée.")
             return
         }
         guard let composer = makeComposer(binding) else { return }
 
         let entry = composer.compose(session)
+        let confirms = confirmsCompletion
+        if confirms {
+            completion = SessionCompletion(localID: entry.localID,
+                                           taskPageID: session.taskPageID,
+                                           taskTitle: title(of: session.taskPageID),
+                                           minutes: entry.durationMinutes,
+                                           mode: session.mode,
+                                           delivery: .sending)
+        }
         persist(entry)
         await environment.log.log(.sync, "entrée mise en file=\(entry.localID) "
                                   + "tâche=\(entry.taskPageID) durée=\(entry.durationMinutes)min "
@@ -520,17 +792,22 @@ final class SessionController: ObservableObject {
         case .sent(let pageID):
             await environment.log.log(.sync, "entrée retirée de la file page=\(pageID)")
             markSent(entry.localID)
-            notice = "Entrée de \(entry.durationMinutes) min envoyée dans Notion."
+            setDelivery(.sent(SessionController.pageURL(pageID)), for: entry.localID)
+            // L'écran de fin dit déjà ce qu'il est advenu de l'entrée : le
+            // répéter en pied de panneau ferait deux fois la même annonce.
+            if !confirms { announce("Entrée de \(entry.durationMinutes) min envoyée dans Notion.") }
         case .failedPermanently(let cause):
             markFailed(entry.localID, cause: cause)
             await environment.log.log(.error, "entrée en échec définitif=\(entry.localID), "
                                       + "conservée en file pour réassignation")
-            notice = "Notion a refusé l'entrée : \(cause)"
+            setDelivery(.pending, for: entry.localID)
+            if !confirms { announce("Notion a refusé l'entrée : \(cause)") }
         case .retryLater(let attemptOutcome, let cause):
             markRetry(entry.localID, attemptOutcome: attemptOutcome, cause: cause)
             await environment.log.log(.sync, "entrée laissée en file=\(entry.localID) "
                                       + "tentatives=\(attemptCount(of: entry.localID))")
-            notice = "Entrée en attente : \(cause)"
+            setDelivery(.pending, for: entry.localID)
+            if !confirms { announce("Entrée en attente : \(cause)") }
         }
         refreshPendingCount()
         if pendingCount > 0 { await drainOnce() }
@@ -545,13 +822,13 @@ final class SessionController: ObservableObject {
     }
 
     private func refuseWithoutConnection() {
-        notice = "Connectez votre compte Notion avant de démarrer une session."
+        announce("Connectez votre compte Notion avant de démarrer une session.")
     }
 
     private func makeComposer(_ binding: DatabaseBinding) -> EntryComposer? {
         let context = environment.container.mainContext
         guard let connection = try? context.fetch(FetchDescriptor<NotionConnection>()).first else {
-            notice = "Aucune connexion Notion active."
+            announce("Aucune connexion Notion active.")
             return nil
         }
         let mapper = PropertyMapper(map: binding.propertyRefs)
@@ -617,12 +894,17 @@ final class SessionController: ObservableObject {
             let previous = AttemptOutcome(rawValue: entry.attemptOutcomeRaw) ?? .neverAttempted
 
             switch await outbox.sendDetached(composed, afterAttempt: previous) {
-            case .sent:
+            case .sent(let pageID):
                 markSent(entry.localID)
+                // L'écran de fin peut être encore ouvert : une entrée partie
+                // avec retard doit s'y voir arriver.
+                setDelivery(.sent(SessionController.pageURL(pageID)), for: entry.localID)
             case .failedPermanently(let cause):
                 markFailed(entry.localID, cause: cause)
+                setDelivery(.pending, for: entry.localID)
             case .retryLater(let outcome, let cause):
                 markRetry(entry.localID, attemptOutcome: outcome, cause: cause)
+                setDelivery(.pending, for: entry.localID)
             }
         }
         refreshPendingCount()
@@ -736,9 +1018,9 @@ final class SessionController: ObservableObject {
 
     private static func message(for reason: RefusalReason) -> String {
         switch reason {
-        case .noTaskSelected: return "Choisissez d'abord une tâche."
-        case .alreadyRunning: return "Une session est déjà en cours."
-        case .pauseUnavailableInPomodoro: return "Un pomodoro ne se met pas en pause."
+        case .noTaskSelected: return "Tu dois d'abord sélectionner une tâche"
+        case .alreadyRunning: return "Une session est déjà en cours, impossible de cumuler"
+        case .pauseUnavailableInPomodoro: return "Impossible de mettre en pause un pomodoro"
         case .nothingRunning: return "Aucune session en cours."
         }
     }

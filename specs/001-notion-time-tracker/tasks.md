@@ -234,6 +234,8 @@ Trois racines de code, conformément à la décision de structure de `plan.md` :
 - [X] T095 [US6] Implémenter le marquage d'échec définitif et la conservation locale consultable dans `Outbox.swift` (FR-030, US6.5)
 - [X] T096 [US6] Implémenter l'indicateur « N entrées en attente » et le détail d'un échec définitif avec son action de résolution dans `App/MenuBar/` (FR-030)
 - [X] T097 [US6] Implémenter la réassignation d'une entrée en échec à une autre tâche avant renvoi dans `App/MenuBar/` et `Outbox.swift` (FR-031, cas limite tâche supprimée)
+- [X] T097b [US3] Implémenter le marquage d'une tâche comme terminée depuis l'écran de fin dans `TaskCache.markDone` et `NotionClient.updatePage`, la valeur écrite venant du groupe « terminé » du schéma (FR-011, FR-026)
+- [X] T097a [US4] [US6] Implémenter l'écran de fin de session dans `App/MenuBar/CompletionView.swift` : durée travaillée en titre au centre, état d'envoi suivi jusqu'à la page créée, relance sur la même méthode et retour à la liste (FR-023, FR-024, FR-026, FR-030)
 
 **Checkpoint**: SC-004 vérifiable — 100 sessions en conditions dégradées, aucune perte, aucun doublon.
 

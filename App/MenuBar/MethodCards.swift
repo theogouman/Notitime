@@ -22,7 +22,11 @@ struct MethodCards: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Comment veux-tu travailler ?")
-                .font(.callout.weight(.semibold))
+                // C'est la question de l'écran : elle se lit avant les cartes,
+                // pas au même rang qu'un libellé de bouton.
+                .font(Typography.title)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
 
             HStack(spacing: 10) {
                 pomodoro

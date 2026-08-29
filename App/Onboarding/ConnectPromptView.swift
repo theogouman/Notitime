@@ -61,7 +61,7 @@ struct ConnectPromptView: View {
             if showsHint {
                 Text("Dupliquez le template proposé, ou choisissez des pages existantes : "
                      + "Notitime reconnaîtra vos bases.")
-                    .font(.caption)
+                    .font(Typography.caption)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)

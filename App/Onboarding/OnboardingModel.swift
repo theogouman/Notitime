@@ -286,7 +286,13 @@ final class OnboardingModel: ObservableObject {
     /// plus sortir. Le choix d'une base depuis les réglages n'a aucune raison de
     /// déplacer l'écran qu'il recouvre.
     func fetchAccessibleSources() async throws {
-        accessibleSources = try await makeDiscovery().allAccessibleSources()
+        let sources = try await makeDiscovery().allAccessibleSources()
+        // Une ligne quand la liste change, et non à chaque relecture : c'est ce
+        // qui rend le journal utile quand on cherche pourquoi une base tarde.
+        if Set(sources.map(\.id)) != Set(accessibleSources.map(\.id)) {
+            await environment.log.log(.sync, "sources accessibles=\(sources.count)")
+        }
+        accessibleSources = sources
     }
 
     /// Assignation manuelle d'une source à un rôle (FR-005, FR-006a).

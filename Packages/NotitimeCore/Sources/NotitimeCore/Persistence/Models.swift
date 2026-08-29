@@ -397,9 +397,24 @@ public final class AppSettings {
     public var notificationsEnabled: Bool
     public var soundEnabled: Bool
     public var launchAtLogin: Bool
+    /// Le mode Concentration suit-il les sessions ? (FR-034)
+    ///
+    /// Valeur par défaut avec la déclaration, et non seulement dans `init` :
+    /// c'est elle que SwiftData applique aux enregistrements déjà en base
+    /// lorsqu'il fait migrer le modèle.
+    public var focusModeEnabled: Bool = false
     public var focusShortcutName: String?
+    /// Le raccourci qui rend la main à la fin d'une session. Sans lui, la
+    /// concentration s'activerait sans jamais se désactiver.
+    public var focusEndShortcutName: String?
     public var taskRefreshIntervalMinutes: Int
-    public var showUnassignedTasks: Bool
+    /// FR-011 — restreindre la liste aux tâches qui me sont assignées.
+    ///
+    /// Remplace `showUnassignedTasks`, dont la valeur par défaut — ne pas
+    /// afficher les tâches sans responsable — amputait la liste sans rien dire.
+    /// Le sens est inversé et le défaut aussi : on montre tout ce qui n'est pas
+    /// terminé, et c'est l'utilisateur qui restreint s'il le souhaite.
+    public var onlyAssignedToMe: Bool = false
     public var doneStatusValues: [String]
     /// Dernière méthode lancée, pour la proposer en premier (SC-002).
     /// `SessionMode.rawValue`, ou `nil` tant qu'aucune session n'a eu lieu.
@@ -415,8 +430,10 @@ public final class AppSettings {
                 idleDetectionEnabledPomodoro: Bool = false,
                 idleThresholdMinutes: Int = 5,
                 notificationsEnabled: Bool = true, soundEnabled: Bool = true,
-                launchAtLogin: Bool = false, focusShortcutName: String? = nil,
-                taskRefreshIntervalMinutes: Int = 5, showUnassignedTasks: Bool = false,
+                launchAtLogin: Bool = false,
+                focusModeEnabled: Bool = false,
+                focusShortcutName: String? = nil, focusEndShortcutName: String? = nil,
+                taskRefreshIntervalMinutes: Int = 5, onlyAssignedToMe: Bool = false,
                 // Vide par défaut : c'est le groupe « terminé » du schéma qui
                 // dit ce qu'être terminé veut dire dans la base de l'utilisateur.
                 // Une liste écrite ici serait du vocabulaire supposé — et « Done »
@@ -434,9 +451,11 @@ public final class AppSettings {
         self.notificationsEnabled = notificationsEnabled
         self.soundEnabled = soundEnabled
         self.launchAtLogin = launchAtLogin
+        self.focusModeEnabled = focusModeEnabled
         self.focusShortcutName = focusShortcutName
+        self.focusEndShortcutName = focusEndShortcutName
         self.taskRefreshIntervalMinutes = taskRefreshIntervalMinutes
-        self.showUnassignedTasks = showUnassignedTasks
+        self.onlyAssignedToMe = onlyAssignedToMe
         self.lastMethodRaw = lastMethodRaw
         self.lastMethodMinutes = lastMethodMinutes
         self.doneStatusValues = doneStatusValues
@@ -482,7 +501,7 @@ public extension AppSettings {
         var settings = TaskFilterSettings()
         settings.doneStatusValues = doneStatusValues
         settings.currentUserID = currentUserID
-        settings.includeUnassigned = showUnassignedTasks
+        settings.onlyAssignedToMe = onlyAssignedToMe
         return settings
     }
 

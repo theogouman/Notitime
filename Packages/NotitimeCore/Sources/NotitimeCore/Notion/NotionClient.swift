@@ -151,6 +151,16 @@ public actor NotionClient {
         return created.id
     }
 
+    /// Modifie des propriétés d'une page existante.
+    ///
+    /// Seules les propriétés nommées dans le corps sont touchées : Notion laisse
+    /// les autres intactes. C'est ce qui permet de changer un statut sans rien
+    /// savoir du reste de la page.
+    public func updatePage(id: String, properties: [String: Any]) async throws {
+        let _: NotionCreatedPage = try await request(.patch, NotionAPI.Path.page(id),
+                                                     body: ["properties": properties])
+    }
+
     /// Publie un commentaire sur une page. Best-effort côté appelant (FR-026a),
     /// mais soumis au limiteur comme toute autre requête.
     public func createComment(pageID: String, text: String) async throws {

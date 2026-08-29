@@ -36,12 +36,13 @@ struct NotitimeApp: App {
 
         // Fenêtre à la demande : elle n'existe que si l'utilisateur l'ouvre, ce
         // que le principe I autorise — il ne proscrit qu'une fenêtre permanente.
-        Window("Configuration de Notitime", id: ConfigurationWindow.id) {
+        Window("Réglages de Notitime", id: ConfigurationWindow.id) {
             ConfigurationView(state: root)
                 .modelContainer(root.containerOrEmpty)
         }
-        .defaultSize(width: 480, height: 520)
-        .windowResizability(.contentMinSize)
+        .defaultSize(width: ConfigurationView.size.width, height: ConfigurationView.size.height)
+        // Taille fixe : la vue porte sa dimension, la fenêtre s'y tient.
+        .windowResizability(.contentSize)
     }
 }
 
@@ -104,7 +105,13 @@ final class RootState: ObservableObject {
             self.session = session
             observations = [
                 onboarding.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() },
-                session.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
+                session.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() },
+                // Les annonces vivent hors du panneau : leur affichage ne peut
+                // pas dépendre d'une vue qui n'existe que menu ouvert — un
+                // pomodoro se termine le plus souvent alors qu'il est fermé.
+                session.$toast.compactMap { $0 }.sink { toast in
+                    ToastPresenter.shared.show(toast.text)
+                }
             ]
             // FR-009 — les tâches se chargent dès que la configuration le
             // permet, sans attendre l'ouverture du menu ni un relancement.
@@ -198,6 +205,62 @@ final class RootState: ObservableObject {
 struct RootView: View {
     @ObservedObject var state: RootState
     @Environment(\.openWindow) private var openWindow
+    /// Le menu des options est ouvert, ou sur le point de l'être.
+    @State private var showsOptions = false
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    /// Le panneau de la liste des tâches.
+    ///
+    /// 630 × 430 : de quoi parcourir une dizaine de tâches avec leur projet et
+    /// leur échéance, et écrire une nouvelle tâche sans que la ligne se serre.
+    static let listSize = CGSize(width: 630, height: 430)
+
+    /// Le panneau de tous les autres écrans.
+    ///
+    /// 320 × 370 : un compteur, une question, une confirmation. Aucun de ces
+    /// écrans n'a de liste à dérouler, et la largeur de la liste les laissait
+    /// flotter au milieu du vide.
+    static let compactSize = CGSize(width: 320, height: 370)
+
+    /// La taille que l'écran affiché réclame, ou `nil` tant qu'aucun compte
+    /// n'est relié — il n'y a alors qu'un bouton, et 370 points de vide en
+    /// dessous ne diraient rien de plus.
+    private var targetSize: CGSize? {
+        guard state.readiness == .ready else { return nil }
+        return state.session?.showsTaskList == true ? RootView.listSize : RootView.compactSize
+    }
+
+    /// La taille qu'a le panneau **en ce moment**.
+    ///
+    /// Elle n'est plus décidée ici : c'est la fenêtre qui change de taille, et
+    /// elle rend à chaque image celle qu'elle vient de prendre. Le contenu se
+    /// remet donc en page à la taille réelle du panneau, au lieu d'être mis en
+    /// page à la taille finale dans une fenêtre qui, elle, avait déjà sauté.
+    @State private var panelSize = RootView.compactSize
+
+    private var width: CGFloat {
+        targetSize == nil ? RootView.compactSize.width : panelSize.width
+    }
+
+    private var panelHeight: CGFloat? {
+        targetSize == nil ? nil : panelSize.height
+    }
+
+    /// Durée du changement de taille, reprise telle quelle de la recette.
+    static let resize: Double = 0.3
+
+    /// Hauteur du pied : le trait (1), ses marges (6 et 6) et le bouton (20).
+    ///
+    /// Elle est nommée parce qu'elle se retranche : le contenu occupe la hauteur
+    /// du panneau moins celle du pied, et le total reste exactement celui
+    /// annoncé par `panelSize`.
+    private static let footerHeight: CGFloat = 33
+
+    /// Ce qui reste au contenu une fois le pied réservé.
+    private var contentHeight: CGFloat? {
+        panelHeight.map { $0 - RootView.footerHeight }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -209,62 +272,146 @@ struct RootView: View {
                 Divider()
             }
 
-            switch state.readiness {
-            case .needsConnection:
-                // Rien d'autre n'est proposé : démarrer une session sans compte
-                // relié produirait une entrée que rien ne pourrait envoyer.
-                ConnectPromptView(size: .compact, showsHint: false) {
-                    ConfigurationWindow.present(openWindow)
-                    Task { await state.onboarding?.connect() }
-                }
+            content
+                .frame(maxWidth: .infinity,
+                       maxHeight: panelHeight == nil ? nil : .infinity,
+                       alignment: .topLeading)
+                // L'écran sortant s'efface pendant que le cadre glisse, et
+                // l'entrant se pose dedans : sans ce fondu, le contenu changeait
+                // d'un coup au milieu d'un mouvement, et c'est ce à-coup qu'on
+                // prenait pour une absence d'animation.
+                .transition(.opacity)
+                .animation(reduceMotion ? nil : Motion.ease(RootView.resize),
+                           value: targetSize)
+        }
+        .padding(12)
+        .frame(width: width, height: contentHeight, alignment: .topLeading)
+        // Le pied est ancré au bas du panneau, quoi qu'il arrive au-dessus.
+        //
+        // Empilé à la suite du contenu, il était poussé hors du cadre dès que
+        // celui-ci réclamait plus de place que le panneau n'en a — un avis de
+        // fin de session, une ligne d'écriture de tâche — et le bouton des
+        // réglages disparaissait. En marge basse, il vient **après** la hauteur
+        // du contenu : le contenu ne peut plus le repousser, et ce qui déborde
+        // passe derrière lui.
+        .safeAreaInset(edge: .bottom, spacing: 0) { footer }
+        // Un fond à nous plutôt que celui du système : le panneau doit se
+        // reconnaître, et non se confondre avec n'importe quel menu.
+        .background(Palette.panel)
+        // La fenêtre elle-même change de taille, largeur et hauteur ensemble,
+        // sur 300 ms et sur la courbe commune à l'application (recette « card
+        // resize » de transitions.dev). Elle reste collée au coin supérieur
+        // droit de l'écran : c'est le point fixe du mouvement.
+        .background(
+            PanelResizer(target: targetSize,
+                         animates: !reduceMotion,
+                         onStep: { panelSize = $0 })
+                .frame(width: 0, height: 0)
+        )
+        // Ce qui déborde est rogné, jamais poussé dehors.
+        .clipped()
+    }
 
-            case .needsBinding:
-                summary
-                Button("Terminer la configuration…") {
-                    ConfigurationWindow.present(openWindow)
-                }
-                .buttonStyle(.borderedProminent)
-
-            case .ready:
-                // Le workspace relié ne se dit plus ici : c'est une information
-                // de réglages, et elle prenait la première ligne du menu à
-                // chaque ouverture pour ne rien apprendre.
-                if let session = state.session {
-                    SessionControls(controller: session)
-                }
-            }
-
+    /// Le bas du panneau : la poignée, un trait, et les options.
+    private var footer: some View {
+        VStack(spacing: 0) {
             Divider()
             HStack {
                 Spacer()
                 options
             }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
         }
-        .padding(12)
-        .frame(width: 280)
+        // Opaque : le contenu qui déborde passe derrière lui, sans le traverser.
+        .background(Palette.panel)
     }
 
-    /// Réglages et Quitter, repliés derrière un seul bouton.
-    ///
-    /// Deux boutons pleine largeur pour des commandes qu'on emploie une fois
-    /// par jour prenaient autant de place que ce qui sert à chaque ouverture.
-    private var options: some View {
-        Menu {
-            Button { ConfigurationWindow.present(openWindow) } label: {
-                Label("Réglages…", systemImage: "gear")
+    @ViewBuilder
+    private var content: some View {
+        switch state.readiness {
+        case .needsConnection:
+            // Rien d'autre n'est proposé : démarrer une session sans compte
+            // relié produirait une entrée que rien ne pourrait envoyer.
+            ConnectPromptView(size: .compact, showsHint: false) {
+                ConfigurationWindow.present(openWindow)
+                Task { await state.onboarding?.connect() }
             }
-            Divider()
-            Button { state.requestTermination() } label: {
-                Label("Quitter", systemImage: "xmark.circle")
+
+        case .needsBinding:
+            VStack(alignment: .leading, spacing: 10) {
+                summary
+                Button("Terminer la configuration…") {
+                    ConfigurationWindow.present(openWindow)
+                }
+                .buttonStyle(.borderedProminent)
             }
-            .keyboardShortcut("q")
-        } label: {
-            Image(systemName: "ellipsis.circle")
+
+        case .ready:
+            // Le workspace relié ne se dit plus ici : c'est une information
+            // de réglages, et elle prenait la première ligne du menu à
+            // chaque ouverture pour ne rien apprendre.
+            if let session = state.session {
+                SessionControls(controller: session)
+            }
         }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
-        .fixedSize()
+    }
+
+    /// Actualiser, Réglages et Quitter, repliés derrière un seul bouton.
+    ///
+    /// Trois boutons pleine largeur pour des commandes qu'on emploie une fois
+    /// par jour prendraient autant de place que ce qui sert à chaque ouverture.
+    /// Le menu est construit en AppKit : confié à SwiftUI, il perdait les images
+    /// de ses entrées d'une version de macOS à l'autre (voir `NativeMenuAnchor`).
+    private var options: some View {
+        Button { showsOptions = true } label: {
+            Image(systemName: "ellipsis.circle")
+                .font(Typography.control)
+                .frame(width: 20, height: 20)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(.secondary)
+        .background(
+            NativeMenuAnchor(entries: optionEntries,
+                             matchesAnchorWidth: false,
+                             isPresented: $showsOptions)
+        )
+        .help("Autres options")
         .accessibilityLabel("Autres options")
+    }
+
+    private var optionEntries: [NativeMenuEntry] {
+        var entries: [NativeMenuEntry] = []
+        // Recharger les tâches est la seule commande qui agit sur ce qu'on a
+        // sous les yeux : elle est en tête, et détachée des deux autres.
+        if state.readiness == .ready, let session = state.session {
+            entries.append(NativeMenuEntry(
+                id: "refresh",
+                title: String(localized: "Actualiser les tâches"),
+                symbols: ["arrow.trianglehead.2.clockwise.rotate.90",
+                          "arrow.triangle.2.circlepath"]) {
+                    Task { await session.loadTasks() }
+                })
+        }
+        entries.append(NativeMenuEntry(
+            id: "settings",
+            title: String(localized: "Réglages…"),
+            symbols: ["gear"],
+            startsSection: true) {
+                ConfigurationWindow.present(openWindow)
+                // Le menu a fini son travail : la suite se passe dans la
+                // fenêtre, et le laisser ouvert derrière elle n'apporte rien.
+                MenuBarPanel.close()
+            })
+        entries.append(NativeMenuEntry(
+            id: "quit",
+            title: String(localized: "Quitter"),
+            symbols: ["xmark.circle"],
+            keyEquivalent: "q") {
+                state.requestTermination()
+            })
+        return entries
     }
 
     @ViewBuilder

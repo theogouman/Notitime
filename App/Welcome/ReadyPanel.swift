@@ -62,33 +62,20 @@ struct ReadyPanel: View {
 
 /// Le nom d'une base, sur fond contrasté, précédé de l'icône de base Notion.
 /// Un clic ouvre la liste des bases partagées pour en changer.
+///
+/// La pastille est dessinée dans un `Button`, et le menu ouvert par
+/// `NativeMenuAnchor` : en libellé de `Menu`, AppKit n'en garderait que le
+/// texte et l'image, et le fond noir disparaîtrait sur macOS 15.
 struct DatabaseChip: View {
 
     @ObservedObject var model: OnboardingModel
     let role: DatabaseRole
 
     @State private var hovered = false
+    @State private var opensMenu = false
 
     var body: some View {
-        Menu {
-            // Un titre au-dessus de la liste : ouvert au milieu d'une phrase,
-            // le menu doit dire de quoi il parle.
-            Section("Quelle base de données ?") {
-                if model.accessibleSources.isEmpty {
-                    Text("Aucune base partagée avec Notitime")
-                }
-                ForEach(model.accessibleSources) { source in
-                    Button(source.name.isEmpty ? "Sans titre" : source.name) {
-                        Task {
-                            await model.assign(dataSourceID: source.id,
-                                               databaseID: source.databaseID,
-                                               name: source.name, to: role,
-                                               changesStep: false)
-                        }
-                    }
-                }
-            }
-        } label: {
+        Button { opensMenu = true } label: {
             HStack(spacing: 8) {
                 Image("DatabaseIcon")
                     .renderingMode(.template)
@@ -119,10 +106,31 @@ struct DatabaseChip: View {
             }
             .contentShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
         }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
+        .buttonStyle(.plain)
+        .background(
+            NativeMenuAnchor(header: String(localized: "Quelle base de données ?"),
+                             entries: entries,
+                             emptyTitle: String(localized: "Aucune base partagée avec Notitime"),
+                             isPresented: $opensMenu)
+        )
         .fixedSize()
         .onHover { hovered = $0 }
         .help("Changer de base")
+        .accessibilityLabel("Changer de base")
+    }
+
+    private var entries: [NativeMenuEntry] {
+        model.accessibleSources.map { source in
+            NativeMenuEntry(id: source.id,
+                            title: source.name.isEmpty
+                                ? String(localized: "Sans titre") : source.name) {
+                Task {
+                    await model.assign(dataSourceID: source.id,
+                                       databaseID: source.databaseID,
+                                       name: source.name, to: role,
+                                       changesStep: false)
+                }
+            }
+        }
     }
 }

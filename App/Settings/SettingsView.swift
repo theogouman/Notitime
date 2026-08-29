@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 import SwiftData
 import NotitimeCore
 
@@ -128,9 +129,13 @@ struct SettingsView: View {
     @ViewBuilder
     private func tasks(_ settings: AppSettings) -> some View {
         Section("Tâches") {
-            Toggle("Afficher aussi les tâches non assignées", isOn: Binding(
-                get: { settings.showUnassignedTasks },
-                set: { settings.showUnassignedTasks = $0; propagate() }))
+            Toggle("N'afficher que les tâches qui me sont assignées", isOn: Binding(
+                get: { settings.onlyAssignedToMe },
+                set: { settings.onlyAssignedToMe = $0; propagate() }))
+            Text("Décoché, le menu propose toutes les tâches non terminées de la "
+                 + "base, responsable ou non.")
+                .font(Typography.caption)
+                .foregroundStyle(.secondary)
             Stepper("Rafraîchir toutes les \(settings.taskRefreshIntervalMinutes) min",
                     value: Binding(get: { settings.taskRefreshIntervalMinutes },
                                    set: { settings.taskRefreshIntervalMinutes = $0; propagate() }),
@@ -169,16 +174,33 @@ struct SettingsView: View {
                     .font(.caption)
                     .foregroundStyle(.orange)
             }
-            LabeledContent("Raccourci de concentration") {
-                TextField("Nom du raccourci", text: Binding(
-                    get: { settings.focusShortcutName ?? "" },
-                    set: { settings.focusShortcutName = $0.isEmpty ? nil : $0 }))
+            Toggle("Activer « Ne pas déranger » pendant une session", isOn: Binding(
+                get: { settings.focusModeEnabled },
+                set: { settings.focusModeEnabled = $0 }))
+            if settings.focusModeEnabled {
+                LabeledContent("Raccourci d'activation") {
+                    TextField("Nom du raccourci", text: Binding(
+                        get: { settings.focusShortcutName ?? "" },
+                        set: { settings.focusShortcutName = $0.isEmpty ? nil : $0 }))
+                }
+                LabeledContent("Raccourci de désactivation") {
+                    TextField("Nom du raccourci", text: Binding(
+                        get: { settings.focusEndShortcutName ?? "" },
+                        set: { settings.focusEndShortcutName = $0.isEmpty ? nil : $0 }))
+                }
+                Text("macOS n'ouvre aucune porte à une application pour activer un "
+                     + "mode Concentration : le seul chemin est un raccourci. Créez-en "
+                     + "deux dans l'app Raccourcis — l'un avec l'action « Définir le "
+                     + "mode de concentration » sur Activé, l'autre sur Désactivé — et "
+                     + "nommez-les ici. Ils se déclenchent au début et à la fin d'un "
+                     + "pomodoro comme d'un suivi libre ; leur échec n'empêche jamais "
+                     + "une session.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Button("Ouvrir l'app Raccourcis") {
+                    if let url = URL(string: "shortcuts://") { NSWorkspace.shared.open(url) }
+                }
             }
-            Text("Créez un raccourci dans l'app Raccourcis qui active votre mode "
-                 + "Concentration, puis indiquez son nom. Son échec n'empêche jamais "
-                 + "une session de démarrer.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
         }
     }
 

@@ -64,31 +64,56 @@ final class RealSchemaTests: XCTestCase {
         XCTAssertEqual(named, ["Terminé", "Annulé"])
     }
 
-    /// FR-011, US3.2 — le filtre Personne ne doit écarter que les tâches
-    /// confiées à quelqu'un d'autre.
+    /// FR-011, US3.2 — sur le schéma réel, aucune tâche n'est écartée sur le
+    /// responsable tant que l'utilisateur ne l'a pas demandé.
     ///
-    /// L'identifiant employé est celui du **propriétaire du compte**, pas celui
-    /// du bot : filtrer sur le bot ne remonterait jamais une tâche assignée.
-    func testTheAssigneeClauseKeepsMineAndTheUnassignedOnes() async throws {
-        var settings = AppSettings().taskFilterSettings(currentUserID: "user-théo")
-        settings.includeUnassigned = true
-        let cache = TaskCache(client: NotionClient(transport: FixtureTransport(),
-                                                   authorization: StaticAuthorization(),
-                                                   rateLimiter: .forTesting(VirtualTimeSource())),
-                              mapper: PropertyMapper(map: try mapping("tasks", as: .tasks)),
-                              dataSourceID: "ds-tpl-tasks",
-                              settings: settings)
+    /// C'est le défaut qui a coûté cher : sur une base de six tâches ouvertes,
+    /// dont quatre sans responsable, le menu n'en proposait que deux.
+    func testNoAssigneeClauseByDefaultOnTheRealSchema() async throws {
+        let cache = try cacheOnRealTasks(
+            settings: AppSettings().taskFilterSettings(currentUserID: "user-théo"))
 
         let built = await cache.queryFilter()
         let filter = try XCTUnwrap(built)
-        let clauses = try XCTUnwrap(filter["and"] as? [[String: Any]])
-        let either = try XCTUnwrap(clauses.compactMap { $0["or"] as? [[String: Any]] }.first)
+        XCTAssertNil(RealSchemaTests.assigneeClause(in: filter),
+                     "le responsable ne doit filtrer que sur demande")
+        XCTAssertEqual(RealSchemaTests.statusValues(in: filter), ["Terminé", "Annulé"])
+    }
 
-        XCTAssertEqual(either.count, 2)
-        XCTAssertEqual((either[0]["people"] as? [String: Any])?["contains"] as? String, "user-théo")
-        XCTAssertEqual((either[1]["people"] as? [String: Any])?["is_empty"] as? Bool, true)
+    /// Demandé, le filtre Personne nomme le **propriétaire du compte**, jamais
+    /// le bot : filtrer sur le bot ne remonterait aucune tâche assignée.
+    func testTheAssigneeClauseNamesTheAccountOwner() async throws {
+        var settings = AppSettings().taskFilterSettings(currentUserID: "user-théo")
+        settings.onlyAssignedToMe = true
+        let cache = try cacheOnRealTasks(settings: settings)
+
+        let built = await cache.queryFilter()
+        let filter = try XCTUnwrap(built)
+        let clause = try XCTUnwrap(RealSchemaTests.assigneeClause(in: filter))
+        XCTAssertEqual(clause["contains"] as? String, "user-théo")
         // Le statut reste filtré en même temps : les deux clauses coexistent.
         XCTAssertEqual(RealSchemaTests.statusValues(in: filter), ["Terminé", "Annulé"])
+    }
+
+    private func cacheOnRealTasks(settings: TaskFilterSettings) throws -> TaskCache {
+        TaskCache(client: NotionClient(transport: FixtureTransport(),
+                                       authorization: StaticAuthorization(),
+                                       rateLimiter: .forTesting(VirtualTimeSource())),
+                  mapper: PropertyMapper(map: try mapping("tasks", as: .tasks)),
+                  dataSourceID: "ds-tpl-tasks",
+                  settings: settings)
+    }
+
+    /// La clause `people`, où qu'elle soit dans l'arbre du filtre.
+    static func assigneeClause(in filter: [String: Any]) -> [String: Any]? {
+        if let people = filter["people"] as? [String: Any] { return people }
+        for value in filter.values {
+            guard let nested = value as? [[String: Any]] else { continue }
+            for clause in nested {
+                if let found = assigneeClause(in: clause) { return found }
+            }
+        }
+        return nil
     }
 
     // MARK: - Écriture d'une entrée (FR-026)

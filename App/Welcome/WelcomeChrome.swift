@@ -81,17 +81,21 @@ struct WelcomeCard<Content: View>: View {
 ///
 /// Police à chasse fixe embarquée, fond sombre à coins arrondis : la citation
 /// se distingue d'elle-même, et les guillemets deviennent inutiles.
+///
+/// À la taille du texte qui l'entoure, et pas au-delà : la pastille cite une
+/// commande au fil d'une phrase, elle ne l'annonce pas. Le fond suffit à la
+/// détacher — l'agrandir en ferait un titre.
 struct CodeChip: View {
     let text: String
 
     var body: some View {
         Text(verbatim: text)
-            .font(.custom("JetBrainsMono-Medium", size: 12))
-            .foregroundStyle(.white)
-            .padding(.horizontal, 9)
-            .padding(.vertical, 5)
+            .font(.custom("JetBrainsMono-Medium", size: 11))
+            .foregroundStyle(.white.opacity(0.92))
+            .padding(.horizontal, 7)
+            .padding(.vertical, 3)
             .background(
-                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
                     .fill(Color(red: 0.13, green: 0.14, blue: 0.17))
             )
             .fixedSize(horizontal: false, vertical: true)

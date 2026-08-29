@@ -65,12 +65,12 @@ final class SettingsTests: XCTestCase {
 
     /// US7.5 — changer les valeurs terminées change le filtre envoyé à Notion.
     func testDoneValuesFlowIntoTheTaskFilter() {
-        let stored = AppSettings(showUnassignedTasks: true, doneStatusValues: ["Livré", "Abandonné"])
+        let stored = AppSettings(onlyAssignedToMe: true, doneStatusValues: ["Livré", "Abandonné"])
 
         let filter = stored.taskFilterSettings(currentUserID: "u-9")
 
         XCTAssertEqual(filter.doneStatusValues, ["Livré", "Abandonné"])
-        XCTAssertTrue(filter.includeUnassigned)
+        XCTAssertTrue(filter.onlyAssignedToMe)
         XCTAssertEqual(filter.currentUserID, "u-9")
     }
 

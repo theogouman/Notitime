@@ -39,6 +39,90 @@ final class TaskCacheTests: XCTestCase {
         return #"{"results":[\#(pages.joined(separator: ","))],"has_more":\#(hasMore),"next_cursor":\#(next)}"#
     }
 
+    // MARK: - Marquer une tâche terminée (US3)
+
+    /// La valeur écrite vient du groupe « terminé » du schéma, pas d'un libellé
+    /// codé en dur : une base en anglais ou un statut renommé restent servis.
+    func testMarkingDoneWritesTheSchemaValue() async throws {
+        let transport = FixtureTransport()
+        await transport.enqueue(.patch, "/v1/pages/t-1", status: 200,
+                                json: #"{"object":"page","id":"t-1"}"#)
+        let cache = TaskCache(client: NotionClient(transport: transport,
+                                                   authorization: StaticAuthorization(),
+                                                   rateLimiter: .forTesting(VirtualTimeSource())),
+                              mapper: PropertyMapper(map: [
+                                .taskTitle: PropertyRef(id: "title", name: "Name", type: "title"),
+                                .taskStatus: PropertyRef(id: "p-sta", name: "Status", type: "status",
+                                                         options: ["À faire", "Terminé", "Annulé"],
+                                                         completeOptions: ["Terminé", "Annulé"])
+                              ]),
+                              dataSourceID: "ds-tasks",
+                              settings: TaskFilterSettings())
+
+        let written = try await cache.markDone("t-1")
+
+        XCTAssertEqual(written, "Terminé")
+        let recorded = await transport.recorded
+        let body = try XCTUnwrap(recorded.last?.body)
+        let json = try XCTUnwrap(try JSONSerialization.jsonObject(with: body) as? [String: Any])
+        let properties = try XCTUnwrap(json["properties"] as? [String: Any])
+        let status = try XCTUnwrap(properties["Status"] as? [String: Any])
+        XCTAssertEqual((status["status"] as? [String: Any])?["name"] as? String, "Terminé")
+    }
+
+    /// Une tâche terminée n'a plus sa place dans une liste de tâches à faire :
+    /// elle en sort sans attendre le prochain rafraîchissement.
+    func testMarkingDoneRemovesTheTaskFromTheCache() async throws {
+        let transport = FixtureTransport()
+        await transport.enqueue(.post, "/v1/data_sources/ds-tasks/query", status: 200,
+                                json: response([page("t-1", "Écrire"), page("t-2", "Relire")]))
+        await transport.enqueue(.patch, "/v1/pages/t-1", status: 200,
+                                json: #"{"object":"page","id":"t-1"}"#)
+        // Le statut porte ici son groupe « terminé » : c'est lui qui rend la
+        // valeur écrite, et sans lui rien ne pourrait être marqué.
+        let cache = TaskCache(client: NotionClient(transport: transport,
+                                                   authorization: StaticAuthorization(),
+                                                   rateLimiter: .forTesting(VirtualTimeSource())),
+                              mapper: PropertyMapper(map: mapping.merging([
+                                .taskStatus: PropertyRef(id: "p-sta", name: "Status", type: "status",
+                                                         options: ["En cours", "Terminé"],
+                                                         completeOptions: ["Terminé"])
+                              ]) { _, new in new }),
+                              dataSourceID: "ds-tasks",
+                              settings: TaskFilterSettings())
+        try await cache.refresh()
+
+        try await cache.markDone("t-1")
+
+        let remaining = await cache.tasks.map(\.id)
+        XCTAssertEqual(remaining, ["t-2"])
+    }
+
+    /// Sans valeur « terminé » exprimable, rien n'est écrit : mieux vaut le dire
+    /// que d'inventer un libellé que la base refusera.
+    func testMarkingDoneRefusesWhenTheSchemaSaysNothing() async throws {
+        let transport = FixtureTransport()
+        let cache = TaskCache(client: NotionClient(transport: transport,
+                                                   authorization: StaticAuthorization(),
+                                                   rateLimiter: .forTesting(VirtualTimeSource())),
+                              mapper: PropertyMapper(map: [
+                                .taskTitle: PropertyRef(id: "title", name: "Name", type: "title"),
+                                .taskStatus: PropertyRef(id: "p-sta", name: "Statut", type: "select",
+                                                         options: ["Ouvert", "Clos"])
+                              ]),
+                              dataSourceID: "ds-tasks",
+                              settings: TaskFilterSettings())
+
+        do {
+            _ = try await cache.markDone("t-1")
+            XCTFail("aucune valeur terminée : l'écriture ne devait pas partir")
+        } catch let refusal as TaskCache.CompletionRefusal {
+            XCTAssertEqual(refusal, .noDoneValue)
+        }
+        let count = await transport.requestCount(.patch, "/v1/pages/t-1")
+        XCTAssertEqual(count, 0)
+    }
+
     // MARK: - T060 : pagination et filtres
 
     /// FR-009 — la pagination est suivie jusqu'à `has_more` faux, sans plafond.
@@ -70,7 +154,7 @@ final class TaskCacheTests: XCTestCase {
         var settings = TaskFilterSettings()
         settings.doneStatusValues = ["Terminé", "Annulé"]
         settings.currentUserID = "u-1"
-        settings.includeUnassigned = false
+        settings.onlyAssignedToMe = true
 
         try await makeCache(transport, settings: settings).refresh()
 
@@ -102,21 +186,80 @@ final class TaskCacheTests: XCTestCase {
 
     // MARK: - T061 : statut et personne
 
-    /// US3.2 — sans filtre Personne, les tâches non assignées sont proposées.
-    func testUnassignedTasksAreIncludedWhenConfigured() async throws {
+    /// US3.2 — par défaut, aucune tâche n'est écartée sur le responsable.
+    ///
+    /// C'est le défaut qui compte : une base partagée porte des tâches sans
+    /// responsable, et les écarter d'office donnait une liste amputée sans que
+    /// rien ne le dise.
+    func testAssigneeClauseIsAbsentUnlessAsked() async throws {
         let transport = FixtureTransport()
         await transport.enqueue(.post, NotionAPI.Path.queryDataSource("ds-tasks"), status: 200,
                                 json: response([]))
         var settings = TaskFilterSettings()
         settings.currentUserID = "u-1"
-        settings.includeUnassigned = true
 
         try await makeCache(transport, settings: settings).refresh()
 
         let recorded = await transport.recorded
         let serialized = String(decoding: recorded[0].body ?? Data(), as: UTF8.self)
-        XCTAssertTrue(serialized.contains("is_empty"),
-                      "les tâches sans responsable doivent être demandées aussi")
+        XCTAssertFalse(serialized.contains("u-1"),
+                       "aucune clause Personne tant qu'elle n'est pas demandée : \(serialized)")
+    }
+
+    /// Un identifiant d'utilisateur vide ne doit jamais devenir une clause :
+    /// `people.contains("")` ne désigne personne, et faisait disparaître toutes
+    /// les tâches assignées après une nouvelle connexion OAuth.
+    func testEmptyUserIDNeverBecomesAClause() async throws {
+        let transport = FixtureTransport()
+        await transport.enqueue(.post, NotionAPI.Path.queryDataSource("ds-tasks"), status: 200,
+                                json: response([]))
+        var settings = TaskFilterSettings()
+        settings.currentUserID = ""
+        settings.onlyAssignedToMe = true
+
+        try await makeCache(transport, settings: settings).refresh()
+
+        let recorded = await transport.recorded
+        let serialized = String(decoding: recorded[0].body ?? Data(), as: UTF8.self)
+        XCTAssertFalse(serialized.contains("contains"),
+                       "clause Personne bâtie sur un identifiant vide : \(serialized)")
+    }
+
+    /// Une tâche sans statut n'est pas une tâche terminée : le filtre le dit
+    /// explicitement plutôt que de s'en remettre à `does_not_equal`.
+    func testTasksWithoutStatusAreNeverExcluded() async throws {
+        let transport = FixtureTransport()
+        await transport.enqueue(.post, NotionAPI.Path.queryDataSource("ds-tasks"), status: 200,
+                                json: response([]))
+        var settings = TaskFilterSettings()
+        settings.doneStatusValues = ["Terminé"]
+
+        try await makeCache(transport, settings: settings).refresh()
+
+        let recorded = await transport.recorded
+        let serialized = String(decoding: recorded[0].body ?? Data(), as: UTF8.self)
+        XCTAssertTrue(serialized.contains("is_empty"), "obtenu : \(serialized)")
+    }
+
+    /// Un filtre refusé par Notion ne doit jamais se solder par une liste vide :
+    /// on relit sans filtre, et l'on écarte les tâches terminées ici.
+    func testARejectedFilterFallsBackToAnUnfilteredRead() async throws {
+        let transport = FixtureTransport()
+        let path = NotionAPI.Path.queryDataSource("ds-tasks")
+        await transport.enqueue(.post, path, status: 400,
+                                json: #"{"object":"error","status":400,"code":"validation_error","message":"propriété inconnue"}"#)
+        await transport.enqueue(.post, path, status: 200,
+                                json: response([page("t-1", "Ouverte", status: "En cours"),
+                                                page("t-2", "Close", status: "Terminé")]))
+
+        var settings = TaskFilterSettings()
+        settings.doneStatusValues = ["Terminé"]
+        let cache = makeCache(transport, settings: settings)
+        try await cache.refresh()
+
+        let tasks = await cache.tasks
+        XCTAssertEqual(tasks.map(\.title), ["Ouverte"],
+                       "la liste doit survivre au refus, sans la tâche terminée")
     }
 
     /// FR-010 — les valeurs terminées sont configurables, pas codées en dur.

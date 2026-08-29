@@ -5,9 +5,7 @@ import NotitimeCore
 struct SessionControls: View {
 
     @ObservedObject var controller: SessionController
-    /// Tâche dépliée dans le lanceur. Partagée avec le menu : reprendre après
-    /// une pause rouvre le panneau sur la tâche courante plutôt que la liste.
-    @State private var expandedTask: String?
+
     /// Tâche visée par une réassignation, indépendante du lanceur : le choix
     /// d'une cible de rattrapage n'est pas celui d'une prochaine session.
     @State private var reassignTarget: String?
@@ -19,27 +17,31 @@ struct SessionControls: View {
                 if let pending = controller.idleArbitration {
                     // FR-024 — l'arbitrage passe avant toute nouvelle session.
                     idleArbitration(pending)
+                } else if let completion = controller.completion {
+                    // US4, US6 — l'entrée vient d'être produite : on dit ce
+                    // qu'elle devient avant de rendre la liste.
+                    CompletionView(controller: controller, completion: completion) {
+                        controller.expandedTaskID = nil
+                        Task { await controller.finishTask() }
+                    }
                 } else {
-                    TaskLauncher(controller: controller, expanded: $expandedTask)
+                    TaskLauncher(controller: controller,
+                                 expanded: $controller.expandedTaskID)
                 }
 
             case .running(let remaining, let taskPageID):
-                Text(controller.title(of: taskPageID)).font(.callout).lineLimit(1)
                 // Un Pomodoro a une échéance : le cadran la montre. Un suivi
-                // libre n'en a pas — un anneau y serait une promesse fausse.
+                // libre n'en a pas — un anneau y serait une promesse fausse, et
+                // c'est le temps écoulé qui devient le sujet de l'écran.
                 if let remaining {
+                    Text(controller.title(of: taskPageID)).font(.callout).lineLimit(1)
                     ring(remaining)
-                } else {
-                    countdown(controller.elapsedLabel, countsDown: false)
-                }
-                HStack(spacing: 6) {
-                    // FR-018 : le Pomodoro n'offre pas de pause ; le Tracker si.
-                    if controller.isTracker {
-                        Button(controller.isPaused ? "Reprendre" : "Pause") {
-                            Task { await controller.togglePause() }
-                        }
+                    HStack(spacing: 6) {
+                        // FR-018 : le Pomodoro n'offre pas de pause.
+                        Button("Arrêter") { Task { await controller.stop() } }
                     }
-                    Button("Arrêter") { Task { await controller.stop() } }
+                } else {
+                    tracker(taskPageID)
                 }
 
             case .breakSuggested(let kind):
@@ -64,12 +66,6 @@ struct SessionControls: View {
                 }
             }
 
-            if let notice = controller.notice {
-                Text(notice)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
             // FR-030 — nombre d'entrées en attente, et détail des échecs.
             if controller.pendingCount > 0 {
                 HStack(spacing: 6) {
@@ -84,6 +80,93 @@ struct SessionControls: View {
                 failure(entry)
             }
         }
+        // Quitter l'écran de fin — par le bouton, par Échap ou en refermant le
+        // panneau — doit ramener la liste des tâches. La tâche dépliée y
+        // survivait, et le menu rouvrait sur le choix de la méthode.
+        .onChange(of: controller.completion == nil) { _, gone in
+            if gone { controller.expandedTaskID = nil }
+        }
+    }
+
+    /// Le suivi libre en cours, bâti comme l'écran de fin : un en-tête discret,
+    /// le chiffre au centre, et les suites en dessous, alignées sur lui.
+    @ViewBuilder
+    private func tracker(_ taskPageID: String) -> some View {
+        VStack(spacing: 0) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(controller.title(of: taskPageID))
+                    .font(Typography.compact)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                Divider()
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            Spacer(minLength: 8)
+
+            VStack(spacing: 6) {
+                Text("La session a commencé il y a…")
+                    .font(Typography.caption)
+                    .foregroundStyle(.secondary)
+
+                // Le compteur dans sa pastille : c'est le seul chiffre de
+                // l'écran, et le fond le détache de tout le reste. Elle se
+                // serre sur lui — étendue à la fenêtre, elle ne mettait plus
+                // rien en valeur, elle faisait juste une barre grise.
+                Text(controller.elapsedLabel)
+                    .font(Typography.display)
+                    .monospacedDigit()
+                    .contentTransition(.numericText(countsDown: false))
+                    .animation(.easeOut(duration: 0.25), value: controller.elapsedLabel)
+                    .padding(.horizontal, 28)
+                    .padding(.vertical, 10)
+                    .frame(maxWidth: .infinity)
+                    .background(
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .fill(Color.primary.opacity(0.07))
+                    )
+
+                // Sous le temps travaillé, en petit : depuis quand on s'est
+                // arrêté. Le premier compte ce qui partira dans Notion, le
+                // second ne compte que pour soi.
+                if let paused = controller.pausedLabel {
+                    Text("En pause depuis \(paused)")
+                        .font(Typography.caption)
+                        .foregroundStyle(.secondary)
+                        .contentTransition(.numericText())
+                        .animation(.easeOut(duration: 0.25), value: paused)
+                }
+
+                // Les deux suites, à la largeur de la pastille : l'alignement
+                // fait le lien entre le chiffre et ce qu'on peut en faire.
+                HStack(spacing: 8) {
+                    Button { Task { await controller.togglePause() } } label: {
+                        Text(controller.isPaused ? "Reprendre" : "Pause")
+                            .controlLabel()
+                            .frame(maxWidth: .infinity)
+                    }
+                    Button { Task { await controller.stop() } } label: {
+                        HStack(spacing: 4) {
+                            Text("Terminé")
+                            Image(systemName: "checkmark.circle")
+                        }
+                        .controlLabel()
+                        .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                }
+                // La taille de contrôle standard des actions principales : les
+                // boutons faisaient une ligne écrasée sous une pastille haute.
+                .controlSize(.large)
+                .padding(.top, 2)
+            }
+            // Le bloc se règle sur le plus large de ses éléments : la pastille
+            // donne sa largeur aux boutons, et les trois s'alignent.
+            .fixedSize(horizontal: true, vertical: false)
+
+            Spacer(minLength: 8)
+        }
+        .frame(maxWidth: .infinity)
     }
 
     /// Le cadran d'une durée visée : temps restant au centre, part d'arc pour
@@ -122,7 +205,7 @@ struct SessionControls: View {
         } else {
             await controller.dismissBreak()
         }
-        expandedTask = task
+        controller.expandedTaskID = task
     }
 
     /// FR-031 — réassigner une entrée en échec à une autre tâche avant renvoi.

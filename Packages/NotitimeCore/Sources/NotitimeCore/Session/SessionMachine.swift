@@ -133,6 +133,31 @@ public enum RestoredSession: Sendable, Equatable {
     case paused(SessionSnapshot)
 }
 
+public extension SessionSnapshot {
+
+    /// Le temps passé en pause jusqu'à `end`, **pause en cours comprise**.
+    ///
+    /// Une pause qui n'est pas terminée est notée avec une durée nulle : elle ne
+    /// se referme qu'à la reprise. La compter telle quelle revenait à ne pas la
+    /// compter du tout — le compteur continuait de tourner sous les yeux de
+    /// l'utilisateur pendant sa pause, et le temps mis de côté partait dans
+    /// Notion comme du temps travaillé.
+    func pausedSeconds(until end: Date) -> TimeInterval {
+        pauseIntervals.enumerated().reduce(0.0) { total, entry in
+            let (index, interval) = entry
+            let isOpen = state == .paused && index == pauseIntervals.count - 1
+            let stop = isOpen ? end : min(interval.end, end)
+            return total + max(0, stop.timeIntervalSince(interval.start))
+        }
+    }
+
+    /// Depuis quand la session est en pause, `nil` si elle ne l'est pas.
+    var pausedSince: Date? {
+        guard state == .paused else { return nil }
+        return pauseIntervals.last?.start
+    }
+}
+
 /// État persistable de la session en cours (FR-022).
 public struct SessionSnapshot: Sendable, Equatable {
     public var localID: UUID
@@ -511,9 +536,7 @@ public actor SessionMachine {
     /// un tick retardé — l'app était occupée — ne doit pas gonfler l'entrée.
     private func effectiveSeconds(of current: SessionSnapshot, until end: Date) -> Int {
         let elapsed = end.timeIntervalSince(current.startedAt)
-        let paused = current.pauseIntervals.reduce(0.0) { total, interval in
-            total + max(0, min(interval.end, end).timeIntervalSince(interval.start))
-        }
+        let paused = current.pausedSeconds(until: end)
         // L'inactivité n'est **pas** retranchée ici : elle est soumise à
         // l'utilisateur, qui peut l'avoir passée à lire ou à réfléchir (FR-024).
         return max(0, Int((elapsed - paused).rounded()))
