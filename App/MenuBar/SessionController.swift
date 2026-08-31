@@ -1,5 +1,7 @@
+import AppKit
 import Foundation
 import SwiftData
+import SwiftUI
 import NotitimeCore
 
 /// Orchestration d'une session côté interface : chargement des tâches, machine
@@ -21,6 +23,13 @@ final class SessionController: ObservableObject {
     @Published private(set) var projects: [ProjectSummary] = []
     /// Identifiants des tâches récentes, affichées en tête (FR-014).
     @Published private(set) var recentIDs: Set<String> = []
+    /// Valeurs de statut proposées par la base, pour le bouton de chaque ligne.
+    @Published private(set) var statusOptions: [TaskStatusOption] = []
+    /// Tâches écartées de la liste par l'utilisateur, et rien d'autre : ce qui
+    /// est masqué ici existe toujours dans Notion.
+    @Published private(set) var hiddenIDs: Set<String> = []
+    /// Ce qu'il faut pour défaire le dernier masquage : la tâche et sa place.
+    private var lastHidden: (item: CachedTaskItem, rank: Int)?
     @Published private(set) var lastSync: Date?
     @Published private(set) var isLoadingTasks = false
     /// La dernière annonce faite à l'utilisateur : issue d'un envoi, refus,
@@ -31,17 +40,29 @@ final class SessionController: ObservableObject {
     /// vrai, et n'a donc rien à faire dans une annonce fugitive.
     @Published private(set) var taskListMessage: String?
 
-    /// Une annonce, et rien de plus : un texte, et une identité qui change à
-    /// chaque fois pour que deux annonces identiques se distinguent.
-    struct Toast: Identifiable, Equatable {
+    /// Une annonce : un texte, une identité qui change à chaque fois pour que
+    /// deux annonces identiques se distinguent, et parfois un geste à offrir.
+    struct Toast: Identifiable {
         let id = UUID()
         let text: String
+        /// Le retour en arrière proposé avec l'annonce, s'il y en a un.
+        ///
+        /// Une action irréversible annoncée après coup n'est pas une action
+        /// annoncée : c'est un fait accompli. Le geste voyage donc **avec** le
+        /// message, et disparaît avec lui.
+        var undo: Undo?
+
+        struct Undo {
+            let title: String
+            let symbol: String
+            let perform: @MainActor () -> Void
+        }
     }
 
     /// Annonce un fait à l'utilisateur. Ce qui est annoncé disparaît de
     /// lui-même : rien de ce qui passe ici ne doit rester à l'écran.
-    private func announce(_ text: String) {
-        toast = Toast(text: text)
+    private func announce(_ text: String, undo: Toast.Undo? = nil) {
+        toast = Toast(text: text, undo: undo)
     }
     @Published private(set) var pendingCount = 0
     @Published var selectedTaskID: String?
@@ -53,6 +74,11 @@ final class SessionController: ObservableObject {
     @Published var expandedTaskID: String?
     /// Session close en attente d'arbitrage d'inactivité (FR-024).
     @Published private(set) var idleArbitration: CompletedSession?
+    /// La pause vient de se terminer : l'écran propose de repartir ou de changer
+    /// de tâche, et rien d'autre ne s'affiche tant qu'on n'a pas tranché.
+    @Published private(set) var breakFinished = false
+    /// Durée de la dernière pause prise, pour l'écran qui la clôt.
+    @Published private(set) var lastBreakMinutes = 5
     /// Session qui vient de produire une entrée, tant que l'écran de fin n'a pas
     /// été quitté (US4, US6, FR-026, FR-030).
     @Published private(set) var completion: SessionCompletion?
@@ -99,6 +125,7 @@ final class SessionController: ObservableObject {
     private var completionHeld = false
     private var drainTask: Task<Void, Never>?
     private var refreshTask: Task<Void, Never>?
+    private var outboxTask: Task<Void, Never>?
 
     init(environment: AppEnvironment) {
         self.environment = environment
@@ -132,6 +159,7 @@ final class SessionController: ObservableObject {
         let userID = (try? context.fetch(FetchDescriptor<NotionConnection>()).first)?.ownerUserID
         await cache?.update(settings: stored.taskFilterSettings(currentUserID: userID))
         scheduleRefresh(everyMinutes: stored.taskRefreshIntervalMinutes)
+        scheduleOutboxDrain()
     }
 
     /// FR-009, SC-006 — rafraîchissement périodique, **suspendu au repos** :
@@ -146,6 +174,29 @@ final class SessionController: ObservableObject {
                 // Au repos et sans session : on saute le tour.
                 guard self.menuIsOpen || self.phase.offersStop else { continue }
                 await self.loadTasks()
+            }
+        }
+    }
+
+    /// La file repart d'elle-même, sans que rien ne l'annonce.
+    ///
+    /// L'écran portait un décompte des entrées en attente et un bouton
+    /// « Réessayer ». C'était donner à lire une inquiétude dont on ne peut rien
+    /// faire : une entrée en attente **est** déjà traitée — elle attend son tour
+    /// de réessai, et le bouton ne faisait que le devancer. Le temps entre deux
+    /// passages est plus court que celui d'une session : rien ne dort longtemps.
+    ///
+    /// Le recul entre deux tentatives d'une même entrée reste celui de la file
+    /// (`nextAttemptAt`) : ce rendez-vous ne fait que proposer, la file dispose.
+    private func scheduleOutboxDrain() {
+        outboxTask?.cancel()
+        outboxTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(120))
+                guard let self, !Task.isCancelled else { return }
+                self.refreshPendingCount()
+                guard self.pendingCount > 0 else { continue }
+                await self.drainOnce()
             }
         }
     }
@@ -241,10 +292,12 @@ final class SessionController: ObservableObject {
             await cache.update(settings: filters)
             try await cache.refresh()
 
-            let all = await cache.search(searchText)
-            let recents = await cache.recentTasks()
+            loadHidden()
+            let all = visible(await cache.search(searchText))
+            let recents = visible(await cache.recentTasks())
             tasks = recents + all.filter { item in !recents.contains { $0.id == item.id } }
             recentIDs = Set(recents.map(\.id))
+            await loadStatusOptions()
             lastSync = await cache.lastSuccessfulSync
             taskListMessage = tasks.isEmpty ? emptyTaskMessage(filters) : nil
             if selectedTaskID == nil { selectedTaskID = tasks.first?.id }
@@ -288,15 +341,146 @@ final class SessionController: ObservableObject {
         task.projectPageID.flatMap { projectNames[$0] }
     }
 
+    // MARK: - Statut d'une tâche (US3)
+
+    /// Les valeurs de statut que la base propose, lues une fois par lancement.
+    ///
+    /// Demandées à l'ouverture du menu plutôt qu'au clic sur le bouton : ouvrir
+    /// un menu déroulant qui met une seconde à se remplir donnerait l'impression
+    /// que la base n'a pas de statuts.
+    func loadStatusOptions() async {
+        guard statusOptions.isEmpty, let cache else { return }
+        statusOptions = await cache.statusOptions()
+    }
+
+    /// Écrit un statut sur une tâche depuis la liste.
+    ///
+    /// Si la base range cette valeur parmi les terminées, la tâche quitte la
+    /// liste sur-le-champ : c'est ce que le geste voulait dire.
+    func setStatus(_ value: String, on task: CachedTaskItem) async {
+        guard let cache else {
+            return announce("La base Tâches n'est pas encore liée. Ouvrez les réglages.")
+        }
+        let rank = tasks.firstIndex { $0.id == task.id } ?? 0
+        do {
+            let completed = try await cache.setStatus(value, on: task.id)
+            if completed {
+                // La ligne s'en va en glissant : une tâche qui disparaît sans
+                // mouvement passe pour une liste qui a sauté.
+                withAnimation(Motion.ease(Motion.pageDuration)) {
+                    tasks.removeAll { $0.id == task.id }
+                }
+                if selectedTaskID == task.id { selectedTaskID = tasks.first?.id }
+            } else if let index = tasks.firstIndex(where: { $0.id == task.id }) {
+                tasks[index] = tasks[index].withStatus(value)
+            }
+            // Un statut écrit dans Notion se voit ailleurs que chez soi : le
+            // geste est annoncé, et il se défait.
+            announce("« \(task.title) » est passée à « \(value) »",
+                     undo: revert(task, to: task.statusValue, at: rank))
+        } catch let refusal as TaskCache.CompletionRefusal {
+            await environment.log.log(.error, "statut non écrit=\(task.id) : \(refusal)")
+            announce("Cette base ne déclare aucun statut à écrire")
+        } catch {
+            await environment.log.log(.error, "statut non écrit=\(task.id) : \(error)")
+            announce("Le statut n'a pas pu être changé dans Notion")
+        }
+    }
+
+    /// Le retour en arrière offert avec l'annonce d'un changement de statut.
+    private func revert(_ task: CachedTaskItem, to previous: String?,
+                        at rank: Int) -> Toast.Undo {
+        Toast.Undo(title: "Ne pas modifier le statut", symbol: "return") { [weak self] in
+            Task { await self?.revertStatus(of: task, to: previous, at: rank) }
+        }
+    }
+
+    /// Rétablit le statut qu'avait une tâche, et la remet dans la liste si le
+    /// changement l'en avait sortie.
+    private func revertStatus(of task: CachedTaskItem, to previous: String?,
+                              at rank: Int) async {
+        guard let cache else { return }
+        do {
+            try await cache.setStatus(previous, on: task.id)
+            let restored = task.withStatus(previous)
+            await cache.reinsert(restored, at: rank)
+            if let index = tasks.firstIndex(where: { $0.id == task.id }) {
+                tasks[index] = restored
+            } else if !hiddenIDs.contains(task.id) {
+                withAnimation(Motion.ease(Motion.pageDuration)) {
+                    tasks.insert(restored, at: min(rank, tasks.count))
+                }
+            }
+        } catch {
+            await environment.log.log(.error, "statut non rétabli=\(task.id) : \(error)")
+            announce("Le statut n'a pas pu être rétabli dans Notion")
+        }
+    }
+
+    // MARK: - Ouvrir, masquer
+
+    /// Ouvre la tâche dans Notion : l'application si elle est installée, le site
+    /// sinon. Le schéma `notion://` est celui que l'application enregistre ;
+    /// personne d'autre ne le revendique.
+    func openInNotion(_ task: CachedTaskItem) {
+        guard let web = SessionController.pageURL(task.id) else { return }
+        let desktop = URL(string: "notion://" + web.absoluteString
+            .replacingOccurrences(of: "https://", with: ""))
+        if let desktop, NSWorkspace.shared.urlForApplication(toOpen: desktop) != nil {
+            NSWorkspace.shared.open(desktop)
+        } else {
+            NSWorkspace.shared.open(web)
+        }
+    }
+
+    /// Écarte une tâche de la liste, ici et pour les prochaines fois.
+    ///
+    /// Rien n'est écrit dans Notion : la tâche existe toujours, avec son statut
+    /// et son échéance. C'est **cette liste-ci** qui n'en veut plus. Le geste est
+    /// annoncé avec de quoi le défaire, parce qu'il est autrement sans retour
+    /// visible : une tâche masquée ne se retrouve nulle part dans le menu.
+    func hide(_ task: CachedTaskItem) {
+        let rank = tasks.firstIndex(where: { $0.id == task.id }) ?? 0
+        lastHidden = (task, rank)
+        HiddenTask.hide(task.id, in: environment.container.mainContext)
+        hiddenIDs.insert(task.id)
+        tasks.removeAll { $0.id == task.id }
+        if selectedTaskID == task.id { selectedTaskID = tasks.first?.id }
+        announce("Cette tâche ne sera plus affichée",
+                 undo: Toast.Undo(title: "Annuler", symbol: "return") { [weak self] in
+                     self?.unhideLast()
+                 })
+    }
+
+    /// Rend à la liste la dernière tâche masquée, à la place qu'elle occupait.
+    func unhideLast() {
+        guard let (item, rank) = lastHidden else { return }
+        lastHidden = nil
+        HiddenTask.show(item.id, in: environment.container.mainContext)
+        hiddenIDs.remove(item.id)
+        guard !tasks.contains(where: { $0.id == item.id }) else { return }
+        tasks.insert(item, at: min(rank, tasks.count))
+    }
+
+    /// Les tâches masquées, relues depuis le magasin local.
+    private func loadHidden() {
+        hiddenIDs = HiddenTask.identifiers(in: environment.container.mainContext)
+    }
+
+    /// Retire de la liste ce que l'utilisateur a écarté.
+    private func visible(_ items: [CachedTaskItem]) -> [CachedTaskItem] {
+        hiddenIDs.isEmpty ? items : items.filter { !hiddenIDs.contains($0.id) }
+    }
+
     // MARK: - Méthodes de lancement (FR-016, FR-018)
 
-    /// Durées proposées : les deux préréglages de FR-018, plus la durée
-    /// personnalisée des réglages si elle en diffère.
+    /// Durées proposées au lancement : celles des réglages, telles quelles.
+    ///
+    /// Plus de composition ici — deux préréglages figés auxquels s'ajoutait
+    /// parfois une troisième valeur — : ce que l'écran propose est exactement ce
+    /// que l'utilisateur a réglé, ni plus ni moins.
     var pomodoroPresets: [Int] {
-        let standard = PomodoroPreset.allCases.map(\.pomodoroMinutes)
-        let custom = storedSettings?.pomodoroMinutes
-        guard let custom, !standard.contains(custom) else { return standard }
-        return (standard + [custom]).sorted()
+        (storedSettings ?? AppSettings()).sessionDurations
     }
 
     /// Dernière méthode lancée.
@@ -337,12 +521,11 @@ final class SessionController: ObservableObject {
     func search(_ text: String) async {
         searchText = text
         guard let cache else { return }
-        let all = await cache.search(text)
-        let recents = await cache.recentTasks()
-        let visible = text.trimmingCharacters(in: .whitespaces).isEmpty
+        let all = visible(await cache.search(text))
+        let recents = visible(await cache.recentTasks())
+        tasks = text.trimmingCharacters(in: .whitespaces).isEmpty
             ? recents + all.filter { item in !recents.contains { $0.id == item.id } }
             : all
-        tasks = visible
     }
 
     static let timeFormatter: DateFormatter = {
@@ -360,6 +543,7 @@ final class SessionController: ObservableObject {
     var showsTaskList: Bool {
         guard case .idle = phase else { return false }
         return completion == nil && idleArbitration == nil && expandedTaskID == nil
+            && !breakFinished
     }
 
     // MARK: - Fin de session (US4, US6)
@@ -378,6 +562,8 @@ final class SessionController: ObservableObject {
         let taskTitle: String
         let minutes: Int
         let mode: SessionMode
+        /// Un pomodoro allé à son terme mérite une pause : l'écran la propose.
+        let offersBreak: Bool
         var delivery: Delivery
 
         /// Où en est l'entrée. `sent` porte l'adresse de la page créée, quand
@@ -445,11 +631,22 @@ final class SessionController: ObservableObject {
         guard let cache else {
             return announce("La base Tâches n'est pas encore liée. Ouvrez les réglages.")
         }
+        // Relevés **avant** l'écriture : marquer la tâche la sort du cache, et
+        // il n'y aurait plus rien à rétablir.
+        let previous = await cache.task(pageID)
+        let rank = tasks.firstIndex { $0.id == pageID } ?? 0
+        // La pause proposée n'a plus lieu d'être : on ne travaille plus sur
+        // cette tâche, et la laisser en attente ramènerait son écran au lieu de
+        // la liste.
+        suggestedBreak = nil
+        breakFinished = false
+        await refreshPhase()
         do {
             let value = try await cache.markDone(pageID)
             tasks.removeAll { $0.id == pageID }
             if selectedTaskID == pageID { selectedTaskID = tasks.first?.id }
-            announce("Tâche marquée « \(value) » dans Notion")
+            announce("Tâche marquée « \(value) » dans Notion",
+                     undo: previous.map { revert($0, to: $0.statusValue, at: rank) })
         } catch let refusal as TaskCache.CompletionRefusal {
             await environment.log.log(.error, "tâche non marquée=\(pageID) : \(refusal)")
             announce("Cette base ne dit pas ce que veut dire « terminé » : "
@@ -565,8 +762,39 @@ final class SessionController: ObservableObject {
 
     func startBreak(_ kind: BreakKind) async {
         suggestedBreak = nil
+        breakFinished = false
+        lastBreakMinutes = breakMinutes(kind)
         await react(to: await machine.handle(.startBreak(kind)))
         startTicking()
+    }
+
+    /// Durée d'une pause, en minutes, telle que les réglages la fixent.
+    private func breakMinutes(_ kind: BreakKind) -> Int {
+        max(1, (kind.isLong ? settings.longBreakSeconds : settings.shortBreakSeconds) / 60)
+    }
+
+    /// Durée de la pause proposée, pour l'écran qui l'offre.
+    var suggestedBreakMinutes: Int { suggestedBreak.map(breakMinutes) ?? lastBreakMinutes }
+
+    /// Accepte la pause proposée sur l'écran de fin.
+    func takeSuggestedBreak() async {
+        let kind = suggestedBreak
+        expandedTaskID = nil
+        dismissCompletion()
+        guard let kind else { return await refreshPhase() }
+        await startBreak(kind)
+    }
+
+    /// La pause est finie : on repart sur la même tâche, avec la même durée.
+    func resumeAfterBreak() async {
+        breakFinished = false
+        await startPomodoro(minutes: lastMethod?.minutes)
+    }
+
+    /// La pause est finie et l'on veut choisir autre chose : retour à la liste.
+    func dismissBreakEnded() {
+        breakFinished = false
+        expandedTaskID = nil
     }
 
     /// US5.6 — traite la session retrouvée selon son mode, puis met en place
@@ -659,9 +887,13 @@ final class SessionController: ObservableObject {
 
         case .breakEnded:
             suggestedBreak = nil
+            // La pause finie appelle une décision — repartir, ou changer de
+            // tâche : elle a donc son écran, et le panneau s'ouvre pour lui.
+            breakFinished = true
             announce("La pause est terminée, on reprend ?")
             stopTicking()
             await refreshPhase()
+            MenuBarPanel.open()
             if notificationsAllowed { await notifications.breakFinished(isLong: false) }
 
         case .finished(let session, let suggestion):
@@ -680,14 +912,15 @@ final class SessionController: ObservableObject {
                     taskTitle: title(of: session.taskPageID),
                     minutes: EntryComposer.minutes(session.effectiveSeconds))
             }
-            // L'écran de fin est réservé aux arrêts qui produisent une entrée
-            // sans autre suite : un pomodoro allé à son terme a déjà le sien,
-            // qui propose la pause (FR-020).
-            await handleCompletion(session,
-                                   confirms: !(session.mode == .pomodoro
-                                               && session.outcome == .ranToTerm))
+            // La pause proposée est retenue **avant** l'écran de fin : c'est
+            // lui qui l'offre désormais, au lieu d'un écran séparé que rien
+            // n'ouvrait tant que le panneau restait fermé.
             suggestedBreak = suggestion
+            await handleCompletion(session)
             await refreshPhase()
+            // Un pomodoro se termine le plus souvent le menu fermé : l'écran de
+            // fin ne servirait à rien si personne ne l'ouvrait.
+            if suggestion != nil { MenuBarPanel.open() }
             // Une pause proposée signe un pomodoro allé au bout : c'est le seul
             // cas où l'on félicite, et la durée dit ce qui a été tenu.
             if suggestion != nil {
@@ -779,6 +1012,7 @@ final class SessionController: ObservableObject {
                                            taskTitle: title(of: session.taskPageID),
                                            minutes: entry.durationMinutes,
                                            mode: session.mode,
+                                           offersBreak: suggestedBreak != nil,
                                            delivery: .sending)
         }
         persist(entry)

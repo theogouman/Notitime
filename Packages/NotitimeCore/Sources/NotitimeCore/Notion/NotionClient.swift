@@ -147,8 +147,17 @@ public actor NotionClient {
     /// L'identifiant rendu est ce qui prouve la création : sans lui, l'entrée ne
     /// peut pas sortir de la file (FR-027).
     public func createPage(_ body: [String: Any]) async throws -> String {
-        let created: NotionCreatedPage = try await request(.post, NotionAPI.Path.pages, body: body)
-        return created.id
+        try await createdPage(body).id
+    }
+
+    /// Crée une page et rend la page **telle que Notion l'a écrite**.
+    ///
+    /// La réponse de création porte déjà toutes les propriétés de la page, y
+    /// compris celles que Notion a remplies d'elle-même — une propriété `status`
+    /// reçoit d'office la première valeur de son groupe « à faire ». Les relire
+    /// coûterait une requête de plus pour une information déjà reçue.
+    public func createdPage(_ body: [String: Any]) async throws -> NotionPage {
+        try await request(.post, NotionAPI.Path.pages, body: body)
     }
 
     /// Modifie des propriétés d'une page existante.

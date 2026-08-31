@@ -13,10 +13,10 @@ struct TaskListStates: View {
 
     var body: some View {
         if controller.isLoadingTasks {
-            // Le popover est étroit : même traitement, une taille en dessous.
             // Le titre se tient au milieu du panneau — c'est la seule chose à
-            // lire pendant l'attente, elle n'a pas à se serrer contre le haut.
-            ShimmerText(text: "On cherche tes tâches", font: .title3.weight(.semibold))
+            // lire pendant l'attente, elle n'a pas à se serrer contre le haut,
+            // ni à s'excuser d'être là : elle est écrite à la taille d'un titre.
+            ShimmerText(text: "On cherche tes tâches", font: Typography.title)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             VStack(alignment: .leading, spacing: 6) {

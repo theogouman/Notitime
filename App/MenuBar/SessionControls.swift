@@ -12,70 +12,86 @@ struct SessionControls: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            switch controller.phase {
-            case .idle:
-                if let pending = controller.idleArbitration {
-                    // FR-024 — l'arbitrage passe avant toute nouvelle session.
-                    idleArbitration(pending)
-                } else if let completion = controller.completion {
-                    // US4, US6 — l'entrée vient d'être produite : on dit ce
-                    // qu'elle devient avant de rendre la liste.
-                    CompletionView(controller: controller, completion: completion) {
-                        controller.expandedTaskID = nil
-                        Task { await controller.finishTask() }
-                    }
-                } else {
+            // Ce qui attend une décision passe avant l'état de la machine : une
+            // session peut être close — donc au repos — et avoir encore un
+            // arbitrage d'inactivité à trancher, un écran de fin à lire, ou une
+            // pause qui vient de sonner.
+            if let pending = controller.idleArbitration {
+                // FR-024 — l'arbitrage passe avant toute nouvelle session.
+                idleArbitration(pending)
+            } else if let completion = controller.completion {
+                // US4, US6 — l'entrée vient d'être produite : on dit ce qu'elle
+                // devient avant de rendre la liste.
+                CompletionView(controller: controller, completion: completion) {
+                    controller.expandedTaskID = nil
+                    Task { await controller.finishTask() }
+                }
+            } else if controller.breakFinished {
+                breakEnded
+            } else {
+                switch controller.phase {
+                case .idle:
                     TaskLauncher(controller: controller,
                                  expanded: $controller.expandedTaskID)
-                }
 
-            case .running(let remaining, let taskPageID):
-                // Un Pomodoro a une échéance : le cadran la montre. Un suivi
-                // libre n'en a pas — un anneau y serait une promesse fausse, et
-                // c'est le temps écoulé qui devient le sujet de l'écran.
-                if let remaining {
-                    Text(controller.title(of: taskPageID)).font(.callout).lineLimit(1)
-                    ring(remaining)
-                    HStack(spacing: 6) {
-                        // FR-018 : le Pomodoro n'offre pas de pause.
-                        Button("Arrêter") { Task { await controller.stop() } }
+                case .running(let remaining, let taskPageID):
+                    // Un Pomodoro a une échéance : le cadran la montre. Un suivi
+                    // libre n'en a pas — un anneau y serait une promesse fausse,
+                    // et c'est le temps écoulé qui devient le sujet de l'écran.
+                    if let remaining {
+                        pomodoro(remaining, taskPageID)
+                    } else {
+                        tracker(taskPageID)
                     }
-                } else {
-                    tracker(taskPageID)
-                }
 
-            case .breakSuggested(let kind):
-                // Rien ne tourne : on propose de commencer la pause, jamais de
-                // l'arrêter — c'est ce bouton d'arrêt fantôme qui échouait.
-                Text(kind.isLong ? "Pause longue proposée" : "Pause proposée")
-                    .font(.callout)
-                HStack(spacing: 6) {
-                    Button("Prendre la pause") { Task { await controller.startBreak(kind) } }
-                        .buttonStyle(.borderedProminent)
-                    Button("Repartir") { Task { await resume() } }
-                    Button("Plus tard") { Task { await controller.dismissBreak() } }
-                }
+                case .breakSuggested(let kind):
+                    // Rien ne tourne : on propose de commencer la pause, jamais
+                    // de l'arrêter — c'est ce bouton d'arrêt fantôme qui échouait.
+                    SessionPanel(title: kind.isLong ? "Pause longue proposée" : "Pause proposée",
+                                 caption: "Tu as gagné une pause") {
+                        CounterPill(text: "\(controller.suggestedBreakMinutes) min")
+                    } note: {
+                        EmptyView()
+                    } actions: {
+                        HStack(spacing: 8) {
+                            Button { Task { await controller.startBreak(kind) } } label: {
+                                Text("Prendre une pause").controlLabel()
+                            }
+                            .buttonStyle(.borderedProminent)
+                            Button { Task { await resume() } } label: {
+                                Text("Repartir").controlLabel()
+                            }
+                        }
+                    }
 
-            case .onBreak(let remaining, let isLong):
-                Text(isLong ? "Pause longue" : "Pause").font(.callout)
-                ring(remaining)
-                HStack(spacing: 6) {
-                    // US2.2 : on doit pouvoir repartir immédiatement.
-                    Button("Repartir") { Task { await resume() } }
-                    Button("Terminer la pause") { Task { await controller.stop() } }
+                case .onBreak(let remaining, let isLong):
+                    SessionPanel(title: isLong ? "Pause longue" : "Pause") {
+                        ring(remaining)
+                    } note: {
+                        EmptyView()
+                    } actions: {
+                        HStack(spacing: 8) {
+                            // US2.2 : on doit pouvoir repartir immédiatement.
+                            Button { Task { await resume() } } label: {
+                                Text("Repartir").controlLabel()
+                            }
+                            Button { Task { await controller.stop() } } label: {
+                                Text("Terminer la pause").controlLabel()
+                            }
+                            .buttonStyle(.borderedProminent)
+                        }
+                    }
                 }
             }
 
-            // FR-030 — nombre d'entrées en attente, et détail des échecs.
-            if controller.pendingCount > 0 {
-                HStack(spacing: 6) {
-                    Text("\(controller.pendingCount) entrée(s) en attente d'envoi.")
-                        .font(.caption)
-                        .foregroundStyle(.orange)
-                    Button("Réessayer") { Task { await controller.drainOutbox() } }
-                        .controlSize(.small)
-                }
-            }
+            // Une entrée en attente ne regarde que l'application : elle repart
+            // d'elle-même, à intervalle régulier, jusqu'à passer. L'annoncer en
+            // pied d'écran revenait à confier à l'utilisateur une inquiétude
+            // dont il ne pouvait rien faire — le bouton « Réessayer » ne faisait
+            // que devancer de quelques minutes ce qui allait arriver seul.
+            //
+            // Les échecs **définitifs** restent affichés : eux attendent une
+            // décision qu'on ne peut pas prendre à sa place (FR-031).
             ForEach(controller.failedEntries, id: \.localID) { entry in
                 failure(entry)
             }
@@ -88,85 +104,83 @@ struct SessionControls: View {
         }
     }
 
+    /// Le pomodoro en cours : la même mise en page que tous les autres écrans
+    /// de session, le cadran à la place de la pastille.
+    ///
+    /// Il était seul à ne rien partager avec eux — titre collé en haut, cadran
+    /// au milieu, bouton d'arrêt contre le bord gauche.
+    @ViewBuilder
+    private func pomodoro(_ remaining: Duration, _ taskPageID: String) -> some View {
+        SessionPanel(title: controller.title(of: taskPageID)) {
+            ring(remaining)
+        } note: {
+            EmptyView()
+        } actions: {
+            // FR-018 : le Pomodoro n'offre pas de pause.
+            Button { Task { await controller.stop() } } label: {
+                Text("Arrêter").controlLabel()
+            }
+            .buttonStyle(.borderedProminent)
+        }
+    }
+
+    /// La pause vient de sonner : repartir sur la même tâche, ou en changer.
+    private var breakEnded: some View {
+        SessionPanel(title: "Pause terminée",
+                     caption: "La pause a duré…") {
+            CounterPill(text: "\(controller.lastBreakMinutes) min")
+        } note: {
+            EmptyView()
+        } actions: {
+            // Empilés : « Relancer le pomodoro » ne tient pas à côté d'un second
+            // bouton dans un panneau de 320 points, et les deux suites n'ont pas
+            // le même poids — l'une reprend, l'autre s'en va.
+            VStack(spacing: 8) {
+                Button { Task { await controller.resumeAfterBreak() } } label: {
+                    Text("Relancer le pomodoro").controlLabel()
+                }
+                .buttonStyle(.borderedProminent)
+                .keyboardShortcut(.defaultAction)
+                Button { controller.dismissBreakEnded() } label: {
+                    Text("Changer de tâche").controlLabel()
+                }
+            }
+        }
+    }
+
     /// Le suivi libre en cours, bâti comme l'écran de fin : un en-tête discret,
     /// le chiffre au centre, et les suites en dessous, alignées sur lui.
     @ViewBuilder
     private func tracker(_ taskPageID: String) -> some View {
-        VStack(spacing: 0) {
-            VStack(alignment: .leading, spacing: 6) {
-                Text(controller.title(of: taskPageID))
-                    .font(Typography.compact)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                Divider()
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-
-            Spacer(minLength: 8)
-
-            VStack(spacing: 6) {
-                Text("La session a commencé il y a…")
+        SessionPanel(title: controller.title(of: taskPageID),
+                     caption: "La session a commencé il y a…") {
+            CounterPill(text: controller.elapsedLabel)
+        } note: {
+            // Sous le temps travaillé, en petit : depuis quand on s'est arrêté.
+            // Le premier compte ce qui partira dans Notion, le second ne compte
+            // que pour soi.
+            if let paused = controller.pausedLabel {
+                Text("En pause depuis \(paused)")
                     .font(Typography.caption)
                     .foregroundStyle(.secondary)
-
-                // Le compteur dans sa pastille : c'est le seul chiffre de
-                // l'écran, et le fond le détache de tout le reste. Elle se
-                // serre sur lui — étendue à la fenêtre, elle ne mettait plus
-                // rien en valeur, elle faisait juste une barre grise.
-                Text(controller.elapsedLabel)
-                    .font(Typography.display)
-                    .monospacedDigit()
-                    .contentTransition(.numericText(countsDown: false))
-                    .animation(.easeOut(duration: 0.25), value: controller.elapsedLabel)
-                    .padding(.horizontal, 28)
-                    .padding(.vertical, 10)
-                    .frame(maxWidth: .infinity)
-                    .background(
-                        RoundedRectangle(cornerRadius: 16, style: .continuous)
-                            .fill(Color.primary.opacity(0.07))
-                    )
-
-                // Sous le temps travaillé, en petit : depuis quand on s'est
-                // arrêté. Le premier compte ce qui partira dans Notion, le
-                // second ne compte que pour soi.
-                if let paused = controller.pausedLabel {
-                    Text("En pause depuis \(paused)")
-                        .font(Typography.caption)
-                        .foregroundStyle(.secondary)
-                        .contentTransition(.numericText())
-                        .animation(.easeOut(duration: 0.25), value: paused)
-                }
-
-                // Les deux suites, à la largeur de la pastille : l'alignement
-                // fait le lien entre le chiffre et ce qu'on peut en faire.
-                HStack(spacing: 8) {
-                    Button { Task { await controller.togglePause() } } label: {
-                        Text(controller.isPaused ? "Reprendre" : "Pause")
-                            .controlLabel()
-                            .frame(maxWidth: .infinity)
-                    }
-                    Button { Task { await controller.stop() } } label: {
-                        HStack(spacing: 4) {
-                            Text("Terminé")
-                            Image(systemName: "checkmark.circle")
-                        }
-                        .controlLabel()
-                        .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.borderedProminent)
-                }
-                // La taille de contrôle standard des actions principales : les
-                // boutons faisaient une ligne écrasée sous une pastille haute.
-                .controlSize(.large)
-                .padding(.top, 2)
+                    .contentTransition(.numericText())
+                    .animation(.easeOut(duration: 0.25), value: paused)
             }
-            // Le bloc se règle sur le plus large de ses éléments : la pastille
-            // donne sa largeur aux boutons, et les trois s'alignent.
-            .fixedSize(horizontal: true, vertical: false)
-
-            Spacer(minLength: 8)
+        } actions: {
+            HStack(spacing: 8) {
+                Button { Task { await controller.togglePause() } } label: {
+                    Text(controller.isPaused ? "Reprendre" : "Pause").controlLabel()
+                }
+                Button { Task { await controller.stop() } } label: {
+                    HStack(spacing: 4) {
+                        Text("Terminé")
+                        Image(systemName: "checkmark.circle")
+                    }
+                    .controlLabel()
+                }
+                .buttonStyle(.borderedProminent)
+            }
         }
-        .frame(maxWidth: .infinity)
     }
 
     /// Le cadran d'une durée visée : temps restant au centre, part d'arc pour
@@ -174,7 +188,8 @@ struct SessionControls: View {
     private func ring(_ remaining: Duration) -> some View {
         TimerRing(label: SessionControls.format(remaining),
                   progress: fraction(remaining),
-                  endsAt: controller.endsAt)
+                  endsAt: controller.endsAt,
+                  diameter: 150)
     }
 
     /// Part restante. Sans cible connue l'anneau reste plein : mieux vaut un

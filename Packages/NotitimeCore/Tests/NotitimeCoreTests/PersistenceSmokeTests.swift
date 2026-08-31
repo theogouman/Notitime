@@ -74,7 +74,7 @@ final class PersistenceSmokeTests: XCTestCase {
         let settings = AppSettings()
         // FR-018 et FR-024 : les valeurs par défaut doivent permettre d'utiliser
         // l'app sans jamais ouvrir les réglages.
-        XCTAssertEqual(settings.pomodoroMinutes, 25)
+        XCTAssertEqual(settings.sessionDurations, [20, 30, 50])
         XCTAssertEqual(settings.shortBreakMinutes, 5)
         XCTAssertEqual(settings.longBreakMinutes, 15)
         XCTAssertEqual(settings.pomodorosBeforeLongBreak, 4)

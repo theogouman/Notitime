@@ -47,6 +47,27 @@ public struct CachedTaskItem: Sendable, Equatable, Identifiable {
         self.dueDate = dueDate
         self.searchKey = searchKey
     }
+
+    /// La même tâche, avec un autre statut. Sert au retour d'écriture : la ligne
+    /// affiche la valeur qu'on vient de choisir, sans attendre un rechargement.
+    public func withStatus(_ value: String?) -> CachedTaskItem {
+        CachedTaskItem(id: id, title: title, statusValue: value, assigneeIDs: assigneeIDs,
+                       projectPageID: projectPageID, dueDate: dueDate, searchKey: searchKey)
+    }
+}
+
+/// Une valeur possible du statut, telle que la base la déclare.
+public struct TaskStatusOption: Sendable, Equatable, Identifiable {
+    public let name: String
+    /// La valeur appartient au groupe « terminé » de la base : la choisir sort
+    /// la tâche de la liste.
+    public let isComplete: Bool
+    public var id: String { name }
+
+    public init(name: String, isComplete: Bool) {
+        self.name = name
+        self.isComplete = isComplete
+    }
 }
 
 /// Cache des tâches ouvertes de l'utilisateur (FR-009 à FR-014).
@@ -68,6 +89,9 @@ public actor TaskCache {
     /// `nil` tant que le schéma n'a pas été lu ; `.some(nil)` quand il l'a été
     /// et qu'aucune propriété de date ne convient.
     private var dueProperty: String??
+    /// La propriété de statut lue dans le schéma vivant. `nil` tant qu'elle ne
+    /// l'a pas été ; `.some(nil)` quand la base n'en déclare aucune.
+    private var statusProperty: PropertyRef??
     private var recentUses: [String: Date] = [:]
     private var useCounter = 0
 
@@ -99,6 +123,7 @@ public actor TaskCache {
         self.dataSourceID = dataSourceID
         tasks = []
         recentUses = [:]
+        statusProperty = nil
         lastSuccessfulSync = nil
     }
 
@@ -175,22 +200,97 @@ public actor TaskCache {
     /// survivrait pas à une base en anglais, ni à un statut renommé.
     @discardableResult
     public func markDone(_ pageID: String) async throws -> String {
-        guard let reference = mapper.reference(.taskStatus) else {
+        guard let reference = await statusReference() else {
             throw CompletionRefusal.noStatusProperty
         }
         guard let value = TaskCache.doneValues(for: reference,
                                                adding: settings.doneStatusValues).first else {
             throw CompletionRefusal.noDoneValue
         }
-        let container = reference.type == "status" ? "status" : "select"
-        try await client.updatePage(id: pageID,
-                                    properties: [reference.name: [container: ["name": value]]])
-        // La tâche n'a plus sa place dans une liste de tâches à faire : elle en
-        // sort tout de suite, sans attendre le prochain rafraîchissement.
-        tasks.removeAll { $0.id == pageID }
-        await log?.log(.sync, "tâche marquée terminée page=\(pageID) "
-                       + "propriété=\(reference.name) valeur=\(value)")
+        try await setStatus(value, on: pageID)
         return value
+    }
+
+    /// Les valeurs que la base propose pour le statut d'une tâche.
+    ///
+    /// Elles viennent du schéma **vivant** plutôt que de celui retenu à la
+    /// liaison : un tag ajouté ou renommé depuis n'y figurerait pas, et proposer
+    /// d'écrire une valeur que la base ne connaît plus ferait refuser la requête
+    /// entière. Le schéma n'est lu qu'une fois par liaison — une base ne change
+    /// pas de tags entre deux clics.
+    public func statusOptions() async -> [TaskStatusOption] {
+        guard let reference = await statusReference() else { return [] }
+        let done = Set(TaskCache.doneValues(for: reference, adding: settings.doneStatusValues))
+        return reference.options.map { TaskStatusOption(name: $0, isComplete: done.contains($0)) }
+    }
+
+    /// Écrit un statut sur une tâche — `nil` l'efface. Rend vrai si ce statut la
+    /// sort de la liste.
+    ///
+    /// Le cache est mis à jour dans la foulée : la ligne porte la valeur choisie,
+    /// ou disparaît si la base range celle-ci parmi les terminées. Attendre le
+    /// prochain rafraîchissement laisserait une tâche close à l'affichage.
+    ///
+    /// `nil` sert au retour en arrière : une tâche qui n'avait pas de statut doit
+    /// pouvoir n'en avoir toujours pas.
+    @discardableResult
+    public func setStatus(_ value: String?, on pageID: String) async throws -> Bool {
+        guard let reference = await statusReference() else {
+            throw CompletionRefusal.noStatusProperty
+        }
+        // Un `status` et un `select` se ressemblent à la lecture, pas à
+        // l'écriture : le conteneur suit le type réel de la propriété.
+        let container = reference.type == "status" ? "status" : "select"
+        let written: Any = value.map { ["name": $0] } ?? NSNull()
+        try await client.updatePage(id: pageID,
+                                    properties: [reference.name: [container: written]])
+
+        let completes = value.map {
+            TaskCache.doneValues(for: reference, adding: settings.doneStatusValues).contains($0)
+        } ?? false
+        if completes {
+            tasks.removeAll { $0.id == pageID }
+        } else if let index = tasks.firstIndex(where: { $0.id == pageID }) {
+            tasks[index] = tasks[index].withStatus(value)
+        }
+        await log?.log(.sync, "statut écrit page=\(pageID) propriété=\(reference.name)"
+                       + " valeur=\(value ?? "aucune") terminé=\(completes)")
+        return completes
+    }
+
+    /// Une tâche du cache, par son identifiant.
+    public func task(_ pageID: String) -> CachedTaskItem? {
+        tasks.first { $0.id == pageID }
+    }
+
+    /// Remet une tâche dans le cache, à la place qu'elle occupait.
+    ///
+    /// Sert au retour en arrière : une tâche passée à « terminé » en est sortie,
+    /// et rétablir son statut ne suffirait pas à la faire revenir avant le
+    /// prochain rafraîchissement.
+    public func reinsert(_ item: CachedTaskItem, at index: Int) {
+        guard !tasks.contains(where: { $0.id == item.id }) else { return }
+        tasks.insert(item, at: min(max(0, index), tasks.count))
+    }
+
+    /// La propriété de statut, telle que la base la déclare aujourd'hui.
+    ///
+    /// Le schéma retenu à la liaison sert de repli : Notion injoignable ne doit
+    /// pas empêcher d'écrire ce qu'on sait déjà de la base.
+    private func statusReference() async -> PropertyRef? {
+        if let statusProperty { return statusProperty }
+        guard let stored = mapper.reference(.taskStatus) else {
+            statusProperty = .some(nil)
+            return nil
+        }
+        let live = try? await client.retrieveDataSource(id: dataSourceID)
+        // Retrouvée par identifiant d'abord : c'est lui qui survit à un
+        // renommage de la colonne.
+        let schema = live?.properties.values.first { $0.id == stored.id }
+            ?? live?.properties[stored.name]
+        let reference = schema?.reference ?? stored
+        statusProperty = .some(reference)
+        return reference
     }
 
     /// La tâche est-elle terminée ? Sert au repli, quand le tri n'a pas pu être
@@ -312,10 +412,17 @@ public actor TaskCache {
 
         let body: [String: Any] = ["parent": ["data_source_id": dataSourceID],
                                    "properties": properties]
-        let id = try await client.createPage(body)
-        let item = CachedTaskItem(id: id, title: trimmed, statusValue: nil, assigneeIDs: [],
-                                  projectPageID: projectPageID, dueDate: due,
-                                  searchKey: TaskCache.fold(trimmed))
+        // La page rendue, et non le seul identifiant : une base range ses
+        // nouvelles tâches sous un statut par défaut — la première valeur du
+        // groupe « à faire » —, et une propriété `status` en porte forcément un.
+        // Bâtie sur ce qu'on avait envoyé, la ligne s'affichait « Sans statut »
+        // jusqu'au rafraîchissement suivant, alors que Notion en avait posé un.
+        let page = try await client.createdPage(body)
+        let id = page.id
+        let item = self.item(from: page)
+            ?? CachedTaskItem(id: id, title: trimmed, statusValue: nil, assigneeIDs: [],
+                              projectPageID: projectPageID, dueDate: due,
+                              searchKey: TaskCache.fold(trimmed))
         tasks.removeAll { $0.id == id }
         tasks.insert(item, at: 0)
         await log?.log(.sync, "tâche créée depuis le menu id=\(id)")

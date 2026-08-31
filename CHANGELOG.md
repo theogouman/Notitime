@@ -106,6 +106,104 @@ Comportements visibles par l'utilisateur, dans l'ordre des livraisons.
 - Ouvrir les réglages depuis le menu referme le menu : la fenêtre passait
   devant, le panneau restait derrière, et il fallait un clic de plus pour s'en
   débarrasser.
+- Une tâche créée depuis le menu porte le statut que Notion lui a donné. Une
+  propriété `status` en assigne toujours un — la première valeur de son groupe
+  « à faire » — mais la ligne était bâtie sur ce qu'on avait envoyé, et affichait
+  « Sans statut » jusqu'au rafraîchissement suivant. La réponse de création
+  contenait déjà la réponse.
+- Le décompte des entrées en attente et son bouton « Réessayer » quittent le
+  panneau. C'était donner à lire une inquiétude dont on ne pouvait rien faire :
+  une entrée en attente est déjà traitée — elle attend son tour de réessai. La
+  file repart maintenant d'elle-même toutes les deux minutes, en respectant le
+  recul propre à chaque entrée. Les échecs définitifs, eux, restent affichés :
+  ils attendent une décision qu'on ne peut pas prendre à la place de l'utilisateur.
+- Le cadran d'un pomodoro et celui d'une pause n'annoncent plus qu'ils décomptent :
+  la légende au-dessus disait ce que le chiffre montrait déjà.
+- Un pomodoro qui arrive à son terme ouvre le panneau sur son écran de fin. Il
+  se terminait le plus souvent le menu fermé : l'écran existait, mais personne ne
+  l'ouvrait, et la pause proposée passait inaperçue.
+- Cet écran propose trois suites : « Prendre une pause », qui lance le minuteur de
+  pause, « Relancer », qui repart sur la même tâche, et « J'ai terminé ma tâche »,
+  en dessous — les trois ne tiennent pas sur une ligne dans un panneau de 320
+  points, et celle qui clôt la tâche ne doit pas se déclencher par mégarde.
+- La pause finie a son écran à son tour : « Reprendre » relance un pomodoro sur la
+  même tâche, « Changer de tâche » ramène la liste.
+- Le pomodoro en cours et la pause reprennent la mise en page des autres écrans de
+  session : titre discret, cadran au centre, boutons dessous. Le pomodoro était le
+  seul à ne rien partager avec eux — titre collé en haut, bouton d'arrêt contre le
+  bord gauche.
+- « Ne pas déranger » quitte les réglages.
+- Les réglages disent ce qu'ils règlent : « Durées du Pomodoro » et « Détection
+  d'inactivité » portent une phrase sous leur nom. Les deux dernières lignes des
+  durées — pause longue, et sa périodicité — disparaissent de l'écran.
+- Les durées ne se choisissent plus dans des préréglages. « 25 / 5 / 15 » et
+  « 50 / 10 / 20 » décidaient de trois choses à la fois, et la durée réglée à la
+  main apparaissait comme une troisième carte au lancement sans que rien ne
+  l'annonce. Les réglages demandent maintenant « Quelle durée pour tes
+  sessions ? » et proposent trois pastilles — 20, 30, 50 — qu'on ajuste aux
+  flèches au survol ou qu'on réécrit d'un clic sur le nombre. Ce sont ces
+  durées-là, et elles seules, que l'écran de méthode propose. Même chose pour
+  « Quelle durée pour tes pauses ? », d'une seule pastille.
+- Changer le statut d'une tâche — depuis sa ligne ou depuis l'écran de fin de
+  session — s'annonce avec « Ne pas modifier le statut » : le geste écrit dans
+  Notion, où d'autres le lisent, et il doit pouvoir se reprendre. La valeur
+  d'avant est réécrite, et la tâche revient à sa place si le changement l'avait
+  sortie de la liste.
+- La taille du panneau ne peut plus rester en retard sur ce qu'il montre. Le
+  mouvement partait d'une mise à jour de SwiftUI, et une commande venue d'un menu
+  le manquait une fois sur trois — « Démarrer une session » laissait la fenêtre à
+  la taille de la liste. La fenêtre est désormais remise d'accord avec son écran à
+  chaque rendu, à l'ouverture du panneau, et une fois de plus après chaque
+  mouvement : au pire la taille est posée d'un coup, jamais fausse.
+- Les commandes des menus d'une ligne partent une fois le menu refermé.
+  Déclenchées pendant son suivi de souris, elles lançaient le redimensionnement
+  du panneau au milieu d'une boucle d'événements : « Démarrer une session »
+  laissait une fenêtre à la mauvaise taille une fois sur trois.
+- Les échéances se disent : « Aujourd'hui », « Demain », « Hier ». Lire « 30
+  août » obligeait à faire le calcul soi-même, à chaque ligne.
+- Les tâches se posent plus vite et plus net : six points de montée, un tiers de
+  seconde, sans flou. Douze points floutés sur une demi-seconde donnaient des
+  lignes qui flottent en descendant plutôt qu'une liste qui arrive.
+- Dans les réglages, la pilule des onglets glisse sans à-coup. Le mouvement était
+  demandé autour du changement d'onglet, ce qui enfermait dans la même
+  transaction la construction de la vue qui arrive : la pilule attendait qu'elle
+  soit bâtie pour bouger. La barre est devenue une vue à part entière, qui porte
+  à la fois l'espace de la pilule et son animation — séparés, la géométrie se
+  résolvait dans la transaction du parent, où plus rien ne s'animait. Le contenu
+  paraît maintenant tout de suite, et la pilule glisse.
+- « Bases Notion » quitte l'onglet Réglages : les mêmes bases, les mêmes boutons
+  et la même revalidation vivent déjà dans « Connexion Notion ».
+- « On cherche tes tâches » s'écrit à la taille d'un titre, et « Comment veux-tu
+  travailler ? » descend d'un cran : à 320 points de large, le titre prenait la
+  place des cartes qu'il annonce.
+- L'écran du compteur et celui de fin de session partagent la même mise en page :
+  même pastille sous le chiffre, même ligne d'appoint sous elle, mêmes boutons à
+  la même hauteur. La fenêtre ne change pas de taille entre les deux — tout ce
+  qui bougeait d'un écran à l'autre se lisait comme un défaut. L'écran de fin dit
+  « La session a duré… », l'état d'envoi passe sous le compteur, et le nom de la
+  tâche disparaît : il est déjà dans le titre de l'écran précédent.
+- Les boutons des sessions retrouvent leur largeur naturelle. Serrés à celle de
+  la pastille, « Terminé » s'écrivait « Ter… ».
+- Le retour à la liste des tâches ne saccade plus. Les lignes rejouaient leur
+  entrée en escalier — dix lignes floutées l'une après l'autre — pendant que la
+  fenêtre changeait de taille : deux animations lourdes sur le même dixième de
+  seconde. L'entrée est réservée à l'arrivée des tâches, et les menus de chaque
+  ligne ne posent plus leur ancre AppKit qu'au moment de s'ouvrir.
+- Le curseur posé sur une annonce suspend son décompte, et le relâche en
+  repartant : rien ne disparaît sous le geste qui allait le viser. Une annonce
+  née le panneau ouvert s'en va avec lui.
+- Chaque tâche porte son statut, sur la ligne où se lisent déjà son projet et
+  son échéance. La pastille se clique : les valeurs proposées sont celles que la
+  base déclare aujourd'hui — lues dans son schéma vivant, pas dans celui retenu
+  à la liaison — et celle qui est en cours est cochée. Choisir une valeur que la
+  base range parmi les terminées fait sortir la tâche de la liste sur-le-champ.
+- Le chevron au bout d'une ligne devient un menu : « Ouvrir dans Notion », qui
+  ouvre l'application si elle est installée et le site sinon ; « Démarrer une
+  session », qui va droit au choix de la méthode ; et « Ne plus afficher ».
+- « Ne plus afficher » écarte la tâche de ce menu, et de lui seul : rien n'est
+  écrit dans Notion, la tâche garde son statut et son échéance. La décision est
+  locale et réversible — l'annonce qui la confirme porte un bouton « Annuler »,
+  et la tâche revient à sa place.
 - Le panneau est collé au bord droit de l'écran, quel que soit l'écran affiché.
   Laissé au système, il se plaçait sous l'icône : la liste, plus large, débordait
   vers la gauche, le compteur restait à droite, et passer de l'un à l'autre

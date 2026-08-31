@@ -27,6 +27,35 @@ enum MenuBarPanel {
     @MainActor
     static func remember(_ window: NSWindow) { panel = window }
 
+    /// Le panneau est ouvert à l'écran.
+    @MainActor
+    static var isOpen: Bool { panel?.isVisible == true }
+
+    /// Ouvre le menu, comme un clic sur l'icône.
+    ///
+    /// `MenuBarExtra` n'expose pas son emplacement dans la barre : on retrouve le
+    /// bouton qui le porte — un `NSStatusBarButton`, classe publique — et on
+    /// clique à la place de l'utilisateur. Sans cela, un pomodoro qui se termine
+    /// alors que le menu est fermé produit un écran que personne ne voit.
+    @MainActor
+    static func open() {
+        guard !isOpen else { return }
+        for window in NSApp.windows {
+            guard let button = statusButton(in: window.contentView) else { continue }
+            button.performClick(nil)
+            return
+        }
+    }
+
+    private static func statusButton(in view: NSView?) -> NSStatusBarButton? {
+        guard let view else { return nil }
+        if let button = view as? NSStatusBarButton { return button }
+        for child in view.subviews {
+            if let found = statusButton(in: child) { return found }
+        }
+        return nil
+    }
+
     /// Referme le menu, comme un clic à côté.
     ///
     /// Ouvrir les réglages depuis le menu laissait les deux à l'écran : la
@@ -102,6 +131,11 @@ struct PanelResizer: NSViewRepresentable {
         view.onStep = onStep
         view.animates = animates
         view.wanted = target
+        // Rattrapage : la taille voulue peut avoir changé sans que le mouvement
+        // ait eu lieu — un écran quitté panneau fermé, une commande venue d'un
+        // menu plutôt que d'un bouton. À chaque rendu, la fenêtre est remise
+        // d'accord avec ce qu'elle montre.
+        view.reconcile()
     }
 
     static func dismantleNSView(_ view: NSView, coordinator: ()) {
@@ -138,11 +172,35 @@ private final class ResizeView: NSView {
         for name in [NSWindow.didResizeNotification, NSWindow.didMoveNotification] {
             center.addObserver(self, selector: #selector(anchor), name: name, object: window)
         }
+        // Le panneau qui s'ouvre est le dernier moment où une taille en retard
+        // peut se rattraper sans que personne ne l'ait vue.
+        center.addObserver(self, selector: #selector(catchUp),
+                           name: NSWindow.didBecomeKeyNotification, object: window)
         // C'est ici, et nulle part ailleurs, qu'on sait quelle fenêtre porte le
         // menu : le reste de l'application n'a plus à la deviner.
         MainActor.assumeIsolated { MenuBarPanel.remember(window) }
         move(animated: false)
     }
+
+    /// Remet la fenêtre à la taille de ce qu'elle montre, si elle s'en est
+    /// écartée.
+    ///
+    /// Le mouvement, lui, part d'une mise à jour de SwiftUI. Ce filet ne suppose
+    /// rien de la façon dont la taille a changé : il ne s'interpose jamais dans
+    /// une animation en cours — elle a raison tant qu'elle dure — et ne fait
+    /// rien quand la taille est déjà la bonne, ce qui est le cas ordinaire.
+    func reconcile() {
+        guard ticker == nil, let window, let wanted, window.isVisible,
+              contentSize(of: window) != wanted else { return }
+        // Jamais dans la passe de rendu qui nous appelle : écrire un état de
+        // SwiftUI au milieu de sa mise à jour est précisément ce qu'il refuse.
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.ticker == nil, self.wanted == wanted else { return }
+            self.apply(wanted)
+        }
+    }
+
+    @objc private func catchUp() { reconcile() }
 
     /// Arrête le mouvement en cours, s'il y en a un.
     func stop() {
@@ -156,7 +214,10 @@ private final class ResizeView: NSView {
         stop()
         guard let window, let wanted else { return }
         let current = contentSize(of: window)
-        guard animated, current != .zero, current != wanted else {
+        // Rien à animer sur un panneau qu'on ne voit pas : la session peut
+        // changer d'écran menu fermé, et la fenêtre doit simplement être à la
+        // bonne taille à sa réouverture.
+        guard animated, window.isVisible, current != .zero, current != wanted else {
             // Hors animation, la taille part d'un cycle de rendu : la poser
             // depuis celui qui l'a demandée reviendrait à écrire un état de
             // SwiftUI au milieu de sa mise à jour.
@@ -172,6 +233,14 @@ private final class ResizeView: NSView {
         // la boucle dans son propre mode, et le mouvement s'y arrêterait net.
         RunLoop.main.add(ticker, forMode: .common)
         self.ticker = ticker
+        // Et un dernier passage une fois le mouvement censé fini : si rien n'a
+        // battu — une boucle d'événements accaparée, un écran endormi —, la
+        // taille est posée d'un coup. Mieux vaut un saut qu'un panneau faux.
+        DispatchQueue.main.asyncAfter(deadline: .now() + RootView.resize + 0.2) { [weak self] in
+            guard let self, self.wanted == wanted else { return }
+            self.stop()
+            self.reconcile()
+        }
     }
 
     private func step() {

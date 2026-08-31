@@ -11,7 +11,7 @@ final class SettingsTests: XCTestCase {
     func testDefaultsMatchTheSpecification() {
         let settings = AppSettings()
 
-        XCTAssertEqual(settings.pomodoroMinutes, 25)
+        XCTAssertEqual(settings.sessionDurations, [20, 30, 50])
         XCTAssertEqual(settings.shortBreakMinutes, 5)
         XCTAssertEqual(settings.longBreakMinutes, 15)
         XCTAssertEqual(settings.pomodorosBeforeLongBreak, 4)
@@ -22,15 +22,17 @@ final class SettingsTests: XCTestCase {
         XCTAssertTrue(settings.soundEnabled)
     }
 
-    /// US7.2 — les deux préréglages de FR-018.
-    func testPresetsMatchTheSpecification() {
-        XCTAssertEqual(PomodoroPreset.classic.pomodoroMinutes, 25)
-        XCTAssertEqual(PomodoroPreset.classic.shortBreakMinutes, 5)
-        XCTAssertEqual(PomodoroPreset.classic.longBreakMinutes, 15)
-
-        XCTAssertEqual(PomodoroPreset.extended.pomodoroMinutes, 50)
-        XCTAssertEqual(PomodoroPreset.extended.shortBreakMinutes, 10)
-        XCTAssertEqual(PomodoroPreset.extended.longBreakMinutes, 20)
+    /// Les durées proposées sont remises d'aplomb avant d'être affichées : le
+    /// magasin peut contenir n'importe quoi, l'écran de méthode non.
+    func testSessionDurationsAreCleanedUp() {
+        XCTAssertEqual(AppSettings(sessionMinutes: [50, 20, 30]).sessionDurations,
+                       [20, 30, 50], "triées")
+        XCTAssertEqual(AppSettings(sessionMinutes: [25, 25, 40]).sessionDurations,
+                       [25, 40], "sans doublon")
+        XCTAssertEqual(AppSettings(sessionMinutes: [0, 900]).sessionDurations,
+                       [1, 180], "bornées")
+        XCTAssertEqual(AppSettings(sessionMinutes: []).sessionDurations,
+                       [20, 30, 50], "jamais vide")
     }
 
     /// Un préréglage personnalisé survit au redémarrage.
@@ -38,19 +40,19 @@ final class SettingsTests: XCTestCase {
         let container = try NotitimeStore.makeInMemoryContainer()
         let context = ModelContext(container)
 
-        let settings = AppSettings(pomodoroMinutes: 33, pomodorosBeforeLongBreak: 3)
+        let settings = AppSettings(sessionMinutes: [15, 33], pomodorosBeforeLongBreak: 3)
         context.insert(settings)
         try context.save()
 
         let reloaded = try XCTUnwrap(try ModelContext(container)
             .fetch(FetchDescriptor<AppSettings>()).first)
-        XCTAssertEqual(reloaded.pomodoroMinutes, 33)
+        XCTAssertEqual(reloaded.sessionDurations, [15, 33])
         XCTAssertEqual(reloaded.pomodorosBeforeLongBreak, 3)
     }
 
     /// Les réglages pilotent la machine : changer une durée change la session.
     func testSettingsDriveTheSessionMachine() {
-        let stored = AppSettings(pomodoroMinutes: 50, shortBreakMinutes: 10,
+        let stored = AppSettings(sessionMinutes: [50, 80], shortBreakMinutes: 10,
                                  longBreakMinutes: 20, pomodorosBeforeLongBreak: 3,
                                  idleThresholdMinutes: 7)
 
@@ -77,7 +79,7 @@ final class SettingsTests: XCTestCase {
     /// Une durée aberrante est ramenée dans des bornes utilisables : un pomodoro
     /// de zéro minute se terminerait avant de commencer.
     func testOutOfRangeValuesAreClamped() {
-        XCTAssertEqual(AppSettings(pomodoroMinutes: 0).sessionSettings.pomodoroSeconds, 60)
+        XCTAssertEqual(AppSettings(sessionMinutes: [0]).sessionSettings.pomodoroSeconds, 60)
         XCTAssertEqual(AppSettings(pomodorosBeforeLongBreak: 0)
                         .sessionSettings.pomodorosBeforeLongBreak, 1)
         XCTAssertGreaterThan(AppSettings(idleThresholdMinutes: 0)

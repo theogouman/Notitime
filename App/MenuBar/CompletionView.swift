@@ -21,41 +21,23 @@ struct CompletionView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        VStack(spacing: 0) {
-            header
-
-            Spacer(minLength: 8)
-
-            // Le sujet de l'écran : ce qui a été travaillé. L'état d'envoi le
-            // surmonte en petit — il renseigne, il ne se lit pas en premier.
-            VStack(spacing: 2) {
-                delivery
-                    // Une identité par état : sans elle, SwiftUI remplacerait le
-                    // texte sur place et aucune transition ne se jouerait.
-                    .id(completion.delivery.id)
-                    .transition(reduceMotion ? .identity : .blurOutUp)
-                    .animation(reduceMotion ? nil : .easeOut(duration: 0.25),
-                               value: completion.delivery)
-
-                Text("\(completion.minutes) min")
-                    .font(Typography.display)
-                    .foregroundStyle(Color.primary)
-                    .contentTransition(.numericText())
-
-                Text(verbatim: completion.taskTitle)
-                    .font(Typography.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
-                    .multilineTextAlignment(.center)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            .frame(maxWidth: .infinity)
-
-            Spacer(minLength: 8)
-
+        // La même mise en page que l'écran du compteur : la fenêtre ne change
+        // pas de taille entre les deux, et rien ne doit sauter d'un écran à
+        // l'autre — ni la pastille, ni la hauteur des boutons.
+        SessionPanel(title: title,
+                     caption: "La session a duré…") {
+            CounterPill(text: "\(completion.minutes) min")
+        } note: {
+            delivery
+                // Une identité par état : sans elle, SwiftUI remplacerait le
+                // texte sur place et aucune transition ne se jouerait.
+                .id(completion.delivery.id)
+                .transition(reduceMotion ? .identity : .blurOutUp)
+                .animation(reduceMotion ? nil : .easeOut(duration: 0.25),
+                           value: completion.delivery)
+        } actions: {
             actions
         }
-        .frame(maxWidth: .infinity)
         // Échap referme, comme partout ailleurs dans le panneau.
         .onExitCommand { controller.dismissCompletion() }
         // Le panneau de la barre de menus se ferme en perdant le premier plan :
@@ -66,22 +48,12 @@ struct CompletionView: View {
         }
     }
 
-    /// Ce qui vient de se passer, dit en une ligne discrète et refermée par un
-    /// trait : c'est un en-tête, pas le sujet.
-    private var header: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(title)
-                .font(Typography.compact)
-                .foregroundStyle(.secondary)
-            Divider()
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
     /// Un suivi libre s'arrête quand on l'a décidé ; un pomodoro arrêté avant
     /// l'heure n'a rien d'une réussite. Aucun des deux ne se félicite.
-    private var title: LocalizedStringKey {
-        completion.mode == .pomodoro ? "Pomodoro arrêté" : "Session terminée"
+    private var title: String {
+        completion.mode == .pomodoro
+            ? String(localized: "Pomodoro arrêté")
+            : String(localized: "Session terminée")
     }
 
     // MARK: - Où en est l'entrée (FR-026, FR-030)
@@ -130,20 +102,48 @@ struct CompletionView: View {
 
     // MARK: - Les deux suites
 
+    /// Ce qu'on peut faire ensuite.
+    ///
+    /// Un pomodoro allé à son terme ouvre une troisième porte — la pause — et
+    /// c'est elle qu'il propose en premier : la mériter est tout l'intérêt de la
+    /// méthode. Les trois suites ne tiennent pas sur une ligne dans un panneau de
+    /// 320 points ; la plus engageante des trois, celle qui clôt la tâche, passe
+    /// en dessous, où l'on ne la déclenche pas par mégarde.
+    @ViewBuilder
     private var actions: some View {
-        HStack(spacing: 8) {
-            Button { Task { await controller.relaunch() } } label: {
-                Text("Relancer").controlLabel()
-            }
-            .buttonStyle(.borderedProminent)
-            // Entrée relance : c'est la suite la plus fréquente.
-            .keyboardShortcut(.defaultAction)
+        if completion.offersBreak {
+            VStack(spacing: 8) {
+                HStack(spacing: 8) {
+                    Button { Task { await controller.takeSuggestedBreak() } } label: {
+                        Text("Prendre une pause").controlLabel()
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .keyboardShortcut(.defaultAction)
 
-            // La tâche passe à « terminé » dans Notion, et la liste revient.
-            Button(action: finish) {
-                Text("J'ai terminé ma tâche").controlLabel()
+                    Button { Task { await controller.relaunch() } } label: {
+                        Text("Relancer").controlLabel()
+                    }
+                }
+                Button(action: finish) {
+                    Text("J'ai terminé ma tâche").controlLabel()
+                }
             }
+            .frame(maxWidth: .infinity)
+        } else {
+            HStack(spacing: 8) {
+                Button { Task { await controller.relaunch() } } label: {
+                    Text("Relancer").controlLabel()
+                }
+                .buttonStyle(.borderedProminent)
+                // Entrée relance : c'est la suite la plus fréquente.
+                .keyboardShortcut(.defaultAction)
+
+                // La tâche passe à « terminé » dans Notion, et la liste revient.
+                Button(action: finish) {
+                    Text("J'ai terminé ma tâche").controlLabel()
+                }
+            }
+            .frame(maxWidth: .infinity)
         }
-        .frame(maxWidth: .infinity)
     }
 }

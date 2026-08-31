@@ -110,7 +110,11 @@ final class RootState: ObservableObject {
                 // pas dépendre d'une vue qui n'existe que menu ouvert — un
                 // pomodoro se termine le plus souvent alors qu'il est fermé.
                 session.$toast.compactMap { $0 }.sink { toast in
-                    ToastPresenter.shared.show(toast.text)
+                    ToastPresenter.shared.show(toast.text,
+                                               undo: toast.undo.map { undo in
+                        ToastUndo(title: undo.title, symbol: undo.symbol,
+                                  perform: undo.perform)
+                    })
                 }
             ]
             // FR-009 — les tâches se chargent dès que la configuration le

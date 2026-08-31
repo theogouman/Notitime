@@ -23,8 +23,10 @@ struct MethodCards: View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Comment veux-tu travailler ?")
                 // C'est la question de l'écran : elle se lit avant les cartes,
-                // pas au même rang qu'un libellé de bouton.
-                .font(Typography.title)
+                // pas au même rang qu'un libellé de bouton. Un cran sous le
+                // titre de panneau : à 320 points de large, vingt points de
+                // haut prenaient la place des cartes qu'ils annoncent.
+                .font(Typography.heading)
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
 

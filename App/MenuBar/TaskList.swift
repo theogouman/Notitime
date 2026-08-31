@@ -35,6 +35,15 @@ struct TaskList: View {
     @State private var pickerHeight: CGFloat = 0
     /// Projet sous le curseur, dans le sélecteur.
     @State private var hoveredProject: String?
+    /// Le menu ouvert dans une ligne, s'il y en a un. Un seul à la fois : deux
+    /// menus natifs ouverts en même temps n'ont aucun sens.
+    @State private var openMenu: RowMenu?
+
+    /// Les deux menus qu'une ligne peut ouvrir, identifiés par la tâche.
+    private enum RowMenu: Equatable {
+        case status(String)
+        case actions(String)
+    }
 
     private enum DraftPicker: String, Identifiable {
         case project, date
@@ -61,7 +70,12 @@ struct TaskList: View {
             // vide : elle n'a jamais existé ailleurs que dans cette vue.
             discardEmptyDraft()
             searchFocused = true
-            reveal()
+            // Les lignes sont déjà en place : elles montent à l'arrivée des
+            // tâches, pas à chaque retour sur la liste. Rejouer l'entrée ici
+            // faisait flouter dix lignes pendant que la fenêtre changeait de
+            // taille — deux animations lourdes sur le même dixième de seconde,
+            // et c'est le redimensionnement qui saccadait.
+            revealed = true
         }
         // Le panneau se referme dès qu'il perd le premier plan : c'est là qu'on
         // abandonne une tâche qu'on n'a pas nommée.
@@ -240,39 +254,41 @@ struct TaskList: View {
 
     @ViewBuilder
     private func row(_ task: CachedTaskItem, rank: Int) -> some View {
-        Button { choose(task) } label: {
-            HStack(spacing: 6) {
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(task.title)
-                        .font(Typography.body)
-                        .lineLimit(1)
-                    details(task)
-                }
-                Spacer(minLength: 0)
-                Image(systemName: "chevron.right")
-                    .font(Typography.caption)
-                    .foregroundStyle(.tertiary)
+        // Plus un bouton, mais une ligne qui se clique : elle porte désormais
+        // deux contrôles à elle — le statut et le menu d'actions —, et un bouton
+        // logé dans le libellé d'un autre bouton ne reçoit aucun clic.
+        HStack(spacing: 6) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(task.title)
+                    .font(Typography.body)
+                    .lineLimit(1)
+                details(task)
             }
-            .padding(.vertical, 4)
-            .padding(.horizontal, 6)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                RoundedRectangle(cornerRadius: 5)
-                    .fill(background(of: task))
-            )
-            .contentShape(Rectangle())
+            Spacer(minLength: 0)
+            actions(task)
         }
-        .buttonStyle(.plain)
+        .padding(.vertical, 4)
+        .padding(.horizontal, 6)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 5)
+                .fill(background(of: task))
+        )
+        .contentShape(Rectangle())
+        .onTapGesture { choose(task) }
+        .accessibilityElement(children: .contain)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityAction { choose(task) }
         // Les lignes montent à leur place l'une après l'autre : la liste se
         // pose, au lieu d'apparaître d'un bloc à la fin du chargement. Le
         // décalage est plafonné — au-delà de neuf lignes, l'attente se verrait
         // plus que le mouvement.
-        .modifier(Offset(y: revealed ? 0 : Motion.staggerDistance,
-                         blur: revealed ? 0 : Motion.staggerBlur,
-                         opacity: revealed ? 1 : 0))
+        .offset(y: revealed ? 0 : Motion.rowsDistance)
+        .scaleEffect(revealed ? 1 : Motion.rowsScale, anchor: .top)
+        .opacity(revealed ? 1 : 0)
         .animation(reduceMotion ? nil
-                   : Motion.ease(Motion.staggerDuration)
-                       .delay(Double(min(rank, 8)) * Motion.staggerStep),
+                   : Motion.ease(Motion.rowsDuration)
+                       .delay(Double(min(rank, 8)) * Motion.rowsStep),
                    value: revealed)
         // Le survol se voit : sans lui, rien ne dit qu'une ligne se clique.
         .onHover { inside in
@@ -298,14 +314,18 @@ struct TaskList: View {
             : .clear
     }
 
-    /// Le projet et l'échéance, sur la même ligne : deux repères qui disent, sans
-    /// ouvrir Notion, à quoi la tâche se rattache et pour quand elle est.
+    /// Le statut, le projet et l'échéance, sur la même ligne : trois repères qui
+    /// disent, sans ouvrir Notion, où en est la tâche, à quoi elle se rattache et
+    /// pour quand elle est.
     @ViewBuilder
     private func details(_ task: CachedTaskItem) -> some View {
         let project = controller.projectName(of: task)
-        let due = task.dueDate.map(TaskList.dayFormatter.string(from:))
-        if project != nil || due != nil {
+        let due = task.dueDate.map(TaskList.day)
+        if showsStatus(of: task) || project != nil || due != nil {
             HStack(spacing: 5) {
+                if showsStatus(of: task) {
+                    statusChip(task)
+                }
                 if let project {
                     Text(project).lineLimit(1)
                 }
@@ -322,6 +342,123 @@ struct TaskList: View {
             .font(Typography.caption)
             .foregroundStyle(.secondary)
         }
+    }
+
+    /// Une base sans propriété de statut n'a rien à afficher ni à proposer : le
+    /// bouton n'ouvrirait qu'un menu vide.
+    private func showsStatus(of task: CachedTaskItem) -> Bool {
+        task.statusValue != nil || !controller.statusOptions.isEmpty
+    }
+
+    /// Le statut, cliquable : une pastille qui dit où en est la tâche et ouvre
+    /// les valeurs que la base déclare.
+    private func statusChip(_ task: CachedTaskItem) -> some View {
+        Button { openMenu = .status(task.id) } label: {
+            HStack(spacing: 3) {
+                Text(task.statusValue ?? "Sans statut")
+                    .lineLimit(1)
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 7, weight: .bold))
+                    .foregroundStyle(.tertiary)
+            }
+            .font(Typography.caption)
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 1)
+            .background(
+                Capsule(style: .continuous).fill(Color.primary.opacity(0.07))
+            )
+            .contentShape(Capsule(style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .help("Changer le statut dans Notion")
+        .background {
+            // L'ancre n'est posée que pour la ligne dont le menu s'ouvre. Une
+            // par ligne et par menu, c'étaient vingt vues AppKit remises à jour
+            // à chaque passe de mise en page — y compris aux soixante passes
+            // d'un changement de taille de la fenêtre.
+            if openMenu == .status(task.id) {
+                NativeMenuAnchor(header: "Statut",
+                                 entries: statusEntries(task),
+                                 emptyTitle: "Cette base ne déclare aucun statut",
+                                 matchesAnchorWidth: false,
+                                 isPresented: menu(.status(task.id)))
+            }
+        }
+    }
+
+    private func statusEntries(_ task: CachedTaskItem) -> [NativeMenuEntry] {
+        controller.statusOptions.map { option in
+            NativeMenuEntry(id: option.name,
+                            title: option.name,
+                            isOn: option.name == task.statusValue) {
+                // L'écriture part maintenant, la liste suit quand Notion a
+                // répondu : c'est le contrôleur qui anime la sortie d'une tâche
+                // passée dans le groupe « terminé ».
+                Task { await controller.setStatus(option.name, on: task) }
+            }
+        }
+    }
+
+    /// Les trois gestes d'une ligne, sous les trois points : ouvrir la tâche là
+    /// où elle vit, la lancer, ou ne plus la voir.
+    private func actions(_ task: CachedTaskItem) -> some View {
+        Button { openMenu = .actions(task.id) } label: {
+            Image(systemName: "ellipsis")
+                .font(Typography.caption)
+                .foregroundStyle(.tertiary)
+                .frame(width: 20, height: 18)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help("Actions sur cette tâche")
+        .accessibilityLabel("Actions sur cette tâche")
+        .background {
+            if openMenu == .actions(task.id) {
+                NativeMenuAnchor(entries: actionEntries(task),
+                                 matchesAnchorWidth: false,
+                                 isPresented: menu(.actions(task.id)))
+            }
+        }
+    }
+
+    private func actionEntries(_ task: CachedTaskItem) -> [NativeMenuEntry] {
+        [
+            NativeMenuEntry(id: "open", title: "Ouvrir dans Notion",
+                            symbols: ["arrow.up.right"]) {
+                controller.openInNotion(task)
+            },
+            NativeMenuEntry(id: "start", title: "Démarrer une session",
+                            symbols: ["bolt.fill"]) {
+                choose(task)
+            },
+            NativeMenuEntry(id: "hide", title: "Ne plus afficher",
+                            symbols: ["eye.slash"], startsSection: true) {
+                withAnimation(reduceMotion ? nil : Motion.ease(Motion.pageDuration)) {
+                    controller.hide(task)
+                }
+            }
+        ]
+    }
+
+    /// Le menu d'une ligne est ouvert, ou ne l'est pas. Un seul à la fois.
+    private func menu(_ target: RowMenu) -> Binding<Bool> {
+        Binding(get: { openMenu == target },
+                set: { openMenu = $0 ? target : nil })
+    }
+
+    /// L'échéance, dite comme on la dirait.
+    ///
+    /// « Aujourd'hui » et « Demain » sont ce qu'on cherche à savoir d'une liste
+    /// de tâches : lire « 30 août » oblige à faire le calcul soi-même, à chaque
+    /// ligne. Au-delà de la veille et du lendemain, la date reprend ses droits —
+    /// « dans trois jours » demanderait le calcul inverse.
+    static func day(_ date: Date) -> String {
+        let calendar = Calendar.current
+        if calendar.isDateInToday(date) { return String(localized: "Aujourd'hui") }
+        if calendar.isDateInTomorrow(date) { return String(localized: "Demain") }
+        if calendar.isDateInYesterday(date) { return String(localized: "Hier") }
+        return dayFormatter.string(from: date)
     }
 
     /// « 12 sept. » dans l'année en cours, « 12 sept. 2027 » au-delà : l'année
@@ -356,7 +493,7 @@ struct TaskList: View {
                         title: draftProject?.name ?? String(localized: "Projet"),
                         isSet: draftProject != nil)
             draftButton(.date, symbol: "calendar",
-                        title: draftDue.map(TaskList.dayFormatter.string(from:))
+                        title: draftDue.map(TaskList.day)
                             ?? String(localized: "Date"),
                         isSet: draftDue != nil)
 

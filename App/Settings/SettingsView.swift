@@ -17,10 +17,6 @@ struct SettingsView: View {
     @Query private var pending: [OutboxEntry]
 
     @State private var confirmingDisconnect = false
-    /// Rôle dont l'utilisateur change la base, `nil` quand la feuille est fermée.
-    @State private var rebinding: DatabaseRole?
-    /// Rôles que la dernière revalidation a trouvés en défaut.
-    @State private var broken: [DatabaseRole] = []
 
     private var settings: AppSettings? { stored.first }
 
@@ -36,59 +32,87 @@ struct SettingsView: View {
                 Text("Réglages indisponibles : le magasin local n'a pas pu être ouvert.")
                     .foregroundStyle(.secondary)
             }
-            bindings
             connection
             journal
         }
         .formStyle(.grouped)
-        .sheet(item: $rebinding) { role in
-            if let onboarding = state.onboarding {
-                DatabasePickerSheet(model: onboarding, role: role) { rebinding = nil }
-            }
-        }
-        .onChange(of: stored.first?.pomodoroMinutes) { _, _ in propagate() }
+        .onChange(of: stored.first?.sessionMinutes) { _, _ in propagate() }
         .onChange(of: stored.first?.doneStatusValues) { _, _ in propagate() }
     }
 
     // MARK: - Durées (FR-018, US7.2)
 
+    /// Les durées ne se choisissent plus dans une liste de préréglages.
+    ///
+    /// « 25 / 5 / 15 » et « 50 / 10 / 20 » décidaient de trois choses à la fois,
+    /// et la durée qu'on réglait à la main apparaissait comme une troisième carte
+    /// au lancement sans que rien ne l'annonce. Ici, la question est posée en
+    /// clair et les durées proposées sont là, modifiables une à une.
     @ViewBuilder
     private func durations(_ settings: AppSettings) -> some View {
-        Section("Durées") {
-            HStack {
-                Text("Préréglages")
-                Spacer()
-                ForEach(PomodoroPreset.allCases, id: \.self) { preset in
-                    Button(preset.label) {
-                        settings.apply(preset)
-                        propagate()
+        Section {
+            LabeledContent("Quelle durée pour tes sessions ?") {
+                pillGroup {
+                    ForEach(Array(settings.sessionDurations.enumerated()), id: \.offset) { rank, value in
+                        DurationPill(minutes: Binding(
+                            get: { value },
+                            set: { replaceSession(at: rank, with: $0, in: settings) }),
+                                     isLeading: rank == 0)
                     }
                 }
             }
-            Stepper("Pomodoro : \(settings.pomodoroMinutes) min",
-                    value: Binding(get: { settings.pomodoroMinutes },
-                                   set: { settings.pomodoroMinutes = $0; propagate() }),
-                    in: 1...180)
-            Stepper("Pause courte : \(settings.shortBreakMinutes) min",
-                    value: Binding(get: { settings.shortBreakMinutes },
-                                   set: { settings.shortBreakMinutes = $0; propagate() }),
-                    in: 1...60)
-            Stepper("Pause longue : \(settings.longBreakMinutes) min",
-                    value: Binding(get: { settings.longBreakMinutes },
-                                   set: { settings.longBreakMinutes = $0; propagate() }),
-                    in: 1...120)
-            Stepper("Pause longue tous les \(settings.pomodorosBeforeLongBreak) pomodoros",
-                    value: Binding(get: { settings.pomodorosBeforeLongBreak },
-                                   set: { settings.pomodorosBeforeLongBreak = $0; propagate() }),
-                    in: 1...12)
+            LabeledContent("Quelle durée pour tes pauses ?") {
+                pillGroup {
+                    DurationPill(minutes: Binding(get: { settings.shortBreakMinutes },
+                                                  set: { settings.shortBreakMinutes = $0; propagate() }),
+                                 range: 1...60,
+                                 unit: "min",
+                                 isLeading: true)
+                }
+            }
+        } header: {
+            header("Durées du Pomodoro", "Personnalise les durées de tes sessions.")
         }
+    }
+
+    /// L'écrin des pastilles : clair, pour que les durées s'en détachent.
+    ///
+    /// Deux gris l'un sur l'autre ne font pas un contraste — le groupe et les
+    /// pastilles se confondaient. Le groupe prend donc le fond des contrôles,
+    /// clair en thème clair, et les pastilles restent le seul relief.
+    @ViewBuilder
+    private func pillGroup<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
+        HStack(spacing: 4) { content() }
+            .padding(3)
+            .background(
+                RoundedRectangle(cornerRadius: 11, style: .continuous)
+                    .fill(Color(nsColor: .controlBackgroundColor))
+            )
+            .overlay {
+                RoundedRectangle(cornerRadius: 11, style: .continuous)
+                    .strokeBorder(Color.primary.opacity(0.08))
+            }
+    }
+
+    /// L'en-tête d'une section : son nom, puis ce qu'elle règle en une phrase.
+    private func header(_ title: String, _ subtitle: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title)
+            Text(subtitle)
+                .font(Typography.caption)
+                .foregroundStyle(.secondary)
+        }
+        // Sans quoi le style groupé compose l'en-tête en capitales, sous-texte
+        // compris — une phrase entière en capitales ne se lit plus.
+        .textCase(nil)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     // MARK: - Inactivité (FR-024, T100)
 
     @ViewBuilder
     private func idle(_ settings: AppSettings) -> some View {
-        Section("Détection d'inactivité") {
+        Section {
             Toggle("En suivi libre", isOn: Binding(
                 get: { settings.idleDetectionEnabledTracker },
                 set: { settings.idleDetectionEnabledTracker = $0; propagate() }))
@@ -103,6 +127,10 @@ struct SettingsView: View {
                  + "Notitime vous demande de conserver ou de retrancher.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+        } header: {
+            header("Détection d'inactivité",
+                   "Notre système identifie les moments où tu n'es pas actif "
+                   + "pour calculer le vrai temps passé")
         }
     }
 
@@ -132,10 +160,6 @@ struct SettingsView: View {
             Toggle("N'afficher que les tâches qui me sont assignées", isOn: Binding(
                 get: { settings.onlyAssignedToMe },
                 set: { settings.onlyAssignedToMe = $0; propagate() }))
-            Text("Décoché, le menu propose toutes les tâches non terminées de la "
-                 + "base, responsable ou non.")
-                .font(Typography.caption)
-                .foregroundStyle(.secondary)
             Stepper("Rafraîchir toutes les \(settings.taskRefreshIntervalMinutes) min",
                     value: Binding(get: { settings.taskRefreshIntervalMinutes },
                                    set: { settings.taskRefreshIntervalMinutes = $0; propagate() }),
@@ -174,83 +198,6 @@ struct SettingsView: View {
                     .font(.caption)
                     .foregroundStyle(.orange)
             }
-            Toggle("Activer « Ne pas déranger » pendant une session", isOn: Binding(
-                get: { settings.focusModeEnabled },
-                set: { settings.focusModeEnabled = $0 }))
-            if settings.focusModeEnabled {
-                LabeledContent("Raccourci d'activation") {
-                    TextField("Nom du raccourci", text: Binding(
-                        get: { settings.focusShortcutName ?? "" },
-                        set: { settings.focusShortcutName = $0.isEmpty ? nil : $0 }))
-                }
-                LabeledContent("Raccourci de désactivation") {
-                    TextField("Nom du raccourci", text: Binding(
-                        get: { settings.focusEndShortcutName ?? "" },
-                        set: { settings.focusEndShortcutName = $0.isEmpty ? nil : $0 }))
-                }
-                Text("macOS n'ouvre aucune porte à une application pour activer un "
-                     + "mode Concentration : le seul chemin est un raccourci. Créez-en "
-                     + "deux dans l'app Raccourcis — l'un avec l'action « Définir le "
-                     + "mode de concentration » sur Activé, l'autre sur Désactivé — et "
-                     + "nommez-les ici. Ils se déclenchent au début et à la fin d'un "
-                     + "pomodoro comme d'un suivi libre ; leur échec n'empêche jamais "
-                     + "une session.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Button("Ouvrir l'app Raccourcis") {
-                    if let url = URL(string: "shortcuts://") { NSWorkspace.shared.open(url) }
-                }
-            }
-        }
-    }
-
-    // MARK: - Bases liées (FR-007, T104, T105)
-
-    @ViewBuilder
-    private var bindings: some View {
-        Section("Bases Notion") {
-            if let onboarding = state.onboarding {
-                ForEach([DatabaseRole.tasks, .timeEntries, .projects], id: \.self) { role in
-                    LabeledContent(SettingsView.label(role)) {
-                        HStack(spacing: 8) {
-                            Text(onboarding.bindings[role] ?? "non liée")
-                                .foregroundStyle(onboarding.bindings[role] == nil ? .secondary : .primary)
-                            // FR-007 — changer de base à tout moment, rôle par
-                            // rôle. Le bouton unique d'autrefois basculait tout
-                            // l'onglet Connexion sur l'écran de désignation
-                            // manuelle, où le premier clic réassignait une base
-                            // à un rôle qu'on n'avait pas choisi.
-                            Button(onboarding.bindings[role] == nil ? "Désigner…" : "Modifier…") {
-                                rebinding = role
-                            }
-                            .buttonStyle(.link)
-                        }
-                    }
-                }
-                // FR-006a — re-résoudre une source disparue. Le résultat se dit
-                // ici : renvoyer l'utilisateur sur un autre onglet pour le lui
-                // apprendre revenait à lui reprendre la main sans prévenir.
-                Button("Revalider") {
-                    Task { broken = await onboarding.revalidate(changesStep: false) }
-                }
-                if !broken.isEmpty {
-                    Text("À reprendre : "
-                         + broken.map(SettingsView.label).joined(separator: ", "))
-                        .font(.caption)
-                        .foregroundStyle(.orange)
-                }
-                Text("Le changement d'une base revalide son schéma avant d'être accepté.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-        }
-    }
-
-    private static func label(_ role: DatabaseRole) -> String {
-        switch role {
-        case .tasks: return "Tâches"
-        case .timeEntries: return "Time Entries"
-        case .projects: return "Projets"
         }
     }
 
@@ -311,6 +258,19 @@ struct SettingsView: View {
 
     /// Republie les réglages vers la machine et le cache : sans cela, un
     /// changement ne prendrait effet qu'au prochain lancement.
+    /// Remplace une durée proposée, en gardant la liste propre.
+    ///
+    /// Écrire une valeur déjà présente la ferait disparaître au tri suivant :
+    /// deux pastilles portant 30 minutes n'ont aucun sens, et la liste doit
+    /// rester celle qu'on voit.
+    private func replaceSession(at rank: Int, with value: Int, in settings: AppSettings) {
+        var durations = settings.sessionDurations
+        guard durations.indices.contains(rank), !durations.contains(value) else { return }
+        durations[rank] = value
+        settings.sessionMinutes = durations.sorted()
+        propagate()
+    }
+
     private func propagate() {
         try? state.environment?.container.mainContext.save()
         Task { await state.session?.applySettings() }

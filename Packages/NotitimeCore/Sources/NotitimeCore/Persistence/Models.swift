@@ -233,6 +233,49 @@ public final class CachedProject {
     }
 }
 
+/// Une tâche que l'utilisateur ne veut plus voir dans son menu.
+///
+/// Locale, et seulement locale : rien n'est écrit dans Notion. La tâche existe
+/// toujours, avec son statut et son échéance ; elle n'a simplement plus sa place
+/// dans **cette** liste-ci. Masquer une tâche dans Notion serait une décision
+/// d'équipe, alors qu'on parle ici d'un encombrement personnel.
+///
+/// Une ligne par page masquée, et rien d'autre : revenir en arrière consiste à
+/// la supprimer.
+@Model
+public final class HiddenTask {
+    @Attribute(.unique) public var taskPageID: String
+    public var hiddenAt: Date
+
+    public init(taskPageID: String, hiddenAt: Date = Date()) {
+        self.taskPageID = taskPageID
+        self.hiddenAt = hiddenAt
+    }
+}
+
+public extension HiddenTask {
+
+    /// Les tâches masquées, prêtes à filtrer une liste.
+    static func identifiers(in context: ModelContext) -> Set<String> {
+        let rows = (try? context.fetch(FetchDescriptor<HiddenTask>())) ?? []
+        return Set(rows.map(\.taskPageID))
+    }
+
+    /// Masque une tâche. Deux fois de suite n'écrit qu'une ligne.
+    static func hide(_ taskPageID: String, in context: ModelContext, at date: Date = Date()) {
+        guard !identifiers(in: context).contains(taskPageID) else { return }
+        context.insert(HiddenTask(taskPageID: taskPageID, hiddenAt: date))
+        try? context.save()
+    }
+
+    /// Rend une tâche à la liste.
+    static func show(_ taskPageID: String, in context: ModelContext) {
+        let rows = (try? context.fetch(FetchDescriptor<HiddenTask>())) ?? []
+        for row in rows where row.taskPageID == taskPageID { context.delete(row) }
+        try? context.save()
+    }
+}
+
 @Model
 public final class RecentTaskUse {
     @Attribute(.unique) public var taskPageID: String
@@ -387,7 +430,17 @@ public final class OutboxEntry {
 @Model
 public final class AppSettings {
     @Attribute(.unique) public var singletonKey: String
-    public var pomodoroMinutes: Int
+    /// Les durées de session proposées au lancement, en minutes.
+    ///
+    /// Une liste, et non plus deux préréglages figés doublés d'une durée
+    /// personnalisée : les rythmes de travail ne se rangent pas en « classique »
+    /// et « étendu », et la valeur qu'on ajoutait à la main apparaissait comme
+    /// une troisième carte sans que rien ne le dise. Ce sont ces durées-là, et
+    /// elles seules, que l'écran de méthode propose.
+    ///
+    /// Valeur par défaut à la déclaration : elle permet à un magasin déjà écrit
+    /// de recevoir la propriété sans reprise.
+    public var sessionMinutes: [Int] = [20, 30, 50]
     public var shortBreakMinutes: Int
     public var longBreakMinutes: Int
     public var pomodorosBeforeLongBreak: Int
@@ -424,7 +477,8 @@ public final class AppSettings {
 
     /// Les valeurs par défaut doivent permettre d'utiliser l'app sans jamais
     /// ouvrir les réglages (US7). Elles reprennent FR-018 et FR-024.
-    public init(pomodoroMinutes: Int = 25, shortBreakMinutes: Int = 5, longBreakMinutes: Int = 15,
+    public init(sessionMinutes: [Int] = [20, 30, 50],
+                shortBreakMinutes: Int = 5, longBreakMinutes: Int = 15,
                 pomodorosBeforeLongBreak: Int = 4,
                 idleDetectionEnabledTracker: Bool = true,
                 idleDetectionEnabledPomodoro: Bool = false,
@@ -441,7 +495,7 @@ public final class AppSettings {
                 doneStatusValues: [String] = [],
                 lastMethodRaw: String? = nil, lastMethodMinutes: Int? = nil) {
         self.singletonKey = "settings"
-        self.pomodoroMinutes = pomodoroMinutes
+        self.sessionMinutes = sessionMinutes
         self.shortBreakMinutes = shortBreakMinutes
         self.longBreakMinutes = longBreakMinutes
         self.pomodorosBeforeLongBreak = pomodorosBeforeLongBreak
@@ -462,23 +516,18 @@ public final class AppSettings {
     }
 }
 
-/// Préréglages Pomodoro de FR-018.
-public enum PomodoroPreset: String, CaseIterable, Sendable {
-    case classic, extended
-
-    public var label: String {
-        switch self {
-        case .classic: return "25 / 5 / 15"
-        case .extended: return "50 / 10 / 20"
-        }
-    }
-
-    public var pomodoroMinutes: Int { self == .classic ? 25 : 50 }
-    public var shortBreakMinutes: Int { self == .classic ? 5 : 10 }
-    public var longBreakMinutes: Int { self == .classic ? 15 : 20 }
-}
-
 public extension AppSettings {
+
+    /// Les durées proposées, remises d'aplomb : bornées, sans doublon, dans
+    /// l'ordre, et jamais vides.
+    ///
+    /// Le magasin peut contenir n'importe quoi — une reprise de schéma, une
+    /// saisie à la main —, et un écran de méthode sans aucune durée ne
+    /// proposerait rien du tout.
+    var sessionDurations: [Int] {
+        let cleaned = Set(sessionMinutes.map { min(180, max(1, $0)) }).sorted()
+        return cleaned.isEmpty ? [20, 30, 50] : cleaned
+    }
     /// Traduction vers les réglages de la machine à états.
     ///
     /// Les valeurs sont bornées ici plutôt qu'à la saisie : le magasin peut
@@ -486,7 +535,9 @@ public extension AppSettings {
     /// un pomodoro de zéro minute se terminerait avant d'avoir commencé.
     var sessionSettings: SessionSettings {
         var settings = SessionSettings()
-        settings.pomodoroSeconds = max(1, pomodoroMinutes) * 60
+        // La première durée proposée fait la durée par défaut : c'est celle
+        // qu'une session lancée sans choix explicite doit prendre.
+        settings.pomodoroSeconds = (sessionDurations.first ?? 20) * 60
         settings.shortBreakSeconds = max(1, shortBreakMinutes) * 60
         settings.longBreakSeconds = max(1, longBreakMinutes) * 60
         settings.pomodorosBeforeLongBreak = max(1, pomodorosBeforeLongBreak)
@@ -505,9 +556,4 @@ public extension AppSettings {
         return settings
     }
 
-    func apply(_ preset: PomodoroPreset) {
-        pomodoroMinutes = preset.pomodoroMinutes
-        shortBreakMinutes = preset.shortBreakMinutes
-        longBreakMinutes = preset.longBreakMinutes
-    }
 }

@@ -235,6 +235,9 @@ Trois racines de code, conformément à la décision de structure de `plan.md` :
 - [X] T096 [US6] Implémenter l'indicateur « N entrées en attente » et le détail d'un échec définitif avec son action de résolution dans `App/MenuBar/` (FR-030)
 - [X] T097 [US6] Implémenter la réassignation d'une entrée en échec à une autre tâche avant renvoi dans `App/MenuBar/` et `Outbox.swift` (FR-031, cas limite tâche supprimée)
 - [X] T097b [US3] Implémenter le marquage d'une tâche comme terminée depuis l'écran de fin dans `TaskCache.markDone` et `NotionClient.updatePage`, la valeur écrite venant du groupe « terminé » du schéma (FR-011, FR-026)
+- [X] T097e [US7] Remplacer les préréglages fixes de FR-018 par une liste de durées réglables (`AppSettings.sessionMinutes`, `DurationPill`) : c'est elle que l'écran de méthode propose (FR-018 revu, US7.2)
+- [X] T097d [US3] Écarter une tâche de la liste sans rien écrire dans Notion : ligne locale `HiddenTask` dans le magasin, disparition immédiate, et annonce offrant « Annuler » (FR-013)
+- [X] T097c [US3] Changer le statut d'une tâche depuis sa ligne : lecture des valeurs déclarées par la base dans `TaskCache.statusOptions` et écriture par `TaskCache.setStatus`, une valeur du groupe « terminé » sortant la tâche de la liste (FR-010, FR-011)
 - [X] T097a [US4] [US6] Implémenter l'écran de fin de session dans `App/MenuBar/CompletionView.swift` : durée travaillée en titre au centre, état d'envoi suivi jusqu'à la page créée, relance sur la même méthode et retour à la liste (FR-023, FR-024, FR-026, FR-030)
 
 **Checkpoint**: SC-004 vérifiable — 100 sessions en conditions dégradées, aucune perte, aucun doublon.

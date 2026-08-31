@@ -16,6 +16,8 @@ struct NativeMenuEntry: Identifiable {
     var startsSection = false
     /// Raccourci clavier, sans le modificateur — AppKit y ajoute Commande.
     var keyEquivalent: String = ""
+    /// L'entrée décrit l'état courant : AppKit la coche.
+    var isOn = false
     let action: () -> Void
 }
 
@@ -51,13 +53,21 @@ struct NativeMenuAnchor: NSViewRepresentable {
         // SwiftUI avant de l'appeler, sinon la mise à jour en cours ne se
         // termine qu'à la fermeture du menu.
         DispatchQueue.main.async {
-            guard isPresented else { return }
-            isPresented = false
+            // Le drapeau du coordinateur, et pas seulement `isPresented` : la
+            // boucle d'événements du menu laisse passer des mises à jour de
+            // SwiftUI, dont chacune rouvrirait un second menu par-dessus.
+            guard isPresented, !context.coordinator.isOpen else { return }
+            context.coordinator.isOpen = true
             let menu = context.coordinator.menu(header: header, emptyTitle: emptyTitle)
             if matchesAnchorWidth { menu.minimumWidth = view.bounds.width }
             // Coordonnées non retournées : y négatif place le menu sous
             // l'ancre, au lieu de le poser par-dessus.
             menu.popUp(positioning: nil, at: NSPoint(x: 0, y: -6), in: view)
+            context.coordinator.isOpen = false
+            // Rendu **après** la fermeture : l'appelant peut n'installer cette
+            // ancre que le temps du menu, et la retirer plus tôt l'emporterait
+            // avec la vue sur laquelle il s'ouvre.
+            isPresented = false
         }
     }
 
@@ -72,6 +82,8 @@ struct NativeMenuAnchor: NSViewRepresentable {
     final class Coordinator: NSObject {
 
         var entries: [NativeMenuEntry] = []
+        /// Un menu est ouvert : ne pas en poser un second par-dessus.
+        var isOpen = false
 
         func menu(header: String?, emptyTitle: String) -> NSMenu {
             let menu = NSMenu()
@@ -94,6 +106,7 @@ struct NativeMenuAnchor: NSViewRepresentable {
                 item.target = self
                 item.tag = index
                 item.image = Coordinator.image(entry.symbols, describing: entry.title)
+                item.state = entry.isOn ? .on : .off
                 menu.addItem(item)
             }
             return menu
@@ -111,7 +124,14 @@ struct NativeMenuAnchor: NSViewRepresentable {
 
         @objc private func pick(_ item: NSMenuItem) {
             guard entries.indices.contains(item.tag) else { return }
-            entries[item.tag].action()
+            let action = entries[item.tag].action
+            // Rendue **après** la fermeture du menu, et pas pendant sa boucle
+            // d'événements : une commande qui change la taille du panneau y
+            // lançait son animation au milieu d'un suivi de souris, et le
+            // redimensionnement s'y perdait une fois sur trois. Le mode par
+            // défaut, et non un simple `async` : la file principale tourne aussi
+            // pendant le suivi de la souris, qui en fait partie.
+            RunLoop.main.perform(inModes: [.default], block: action)
         }
     }
 }

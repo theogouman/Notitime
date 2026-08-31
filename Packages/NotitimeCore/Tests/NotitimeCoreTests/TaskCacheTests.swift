@@ -123,6 +123,112 @@ final class TaskCacheTests: XCTestCase {
         XCTAssertEqual(count, 0)
     }
 
+    // MARK: - Création (US3)
+
+    /// Une base range ses nouvelles tâches sous un statut par défaut : c'est
+    /// celui-là que la ligne doit porter, et non « sans statut » jusqu'au
+    /// prochain rafraîchissement. La réponse de création le contient déjà.
+    func testCreatedTaskKeepsTheStatusNotionAssigned() async throws {
+        let transport = FixtureTransport()
+        await transport.enqueue(.post, "/v1/pages", status: 200,
+                                json: page("t-9", "Écrire le rapport", status: "À faire"))
+        let cache = makeCache(transport)
+
+        let created = try await cache.createTask(titled: "Écrire le rapport")
+
+        XCTAssertEqual(created.statusValue, "À faire")
+        let cached = await cache.task("t-9")
+        XCTAssertEqual(cached?.statusValue, "À faire")
+    }
+
+    // MARK: - Lire et écrire le statut (US3)
+
+    /// Le schéma du magasin peut dater : les valeurs proposées viennent de la
+    /// base telle qu'elle est aujourd'hui, avec son groupe « terminé ».
+    func testStatusOptionsComeFromTheLiveSchema() async throws {
+        let transport = FixtureTransport()
+        await transport.enqueue(.get, "/v1/data_sources/ds-tasks", status: 200, json: #"""
+        {"object":"data_source","id":"ds-tasks","title":[],"properties":{
+          "Status":{"id":"p-sta","name":"Status","type":"status","status":{
+            "options":[{"id":"o1","name":"À faire"},{"id":"o2","name":"En revue"},
+                       {"id":"o3","name":"Livré"}],
+            "groups":[{"id":"g1","name":"To-do","option_ids":["o1"]},
+                      {"id":"g2","name":"In progress","option_ids":["o2"]},
+                      {"id":"g3","name":"Complete","option_ids":["o3"]}]}}}}
+        """#.replacingOccurrences(of: "\n", with: ""))
+        let cache = makeCache(transport)
+
+        let options = await cache.statusOptions()
+
+        XCTAssertEqual(options.map(\.name), ["À faire", "En revue", "Livré"])
+        XCTAssertEqual(options.filter(\.isComplete).map(\.name), ["Livré"])
+    }
+
+    /// Notion injoignable ne doit pas vider le menu : on retombe sur le schéma
+    /// retenu à la liaison, qui reste vrai la plupart du temps.
+    func testStatusOptionsFallBackToTheBoundSchema() async throws {
+        let transport = FixtureTransport()
+        let cache = TaskCache(client: NotionClient(transport: transport,
+                                                   authorization: StaticAuthorization(),
+                                                   rateLimiter: .forTesting(VirtualTimeSource())),
+                              mapper: PropertyMapper(map: [
+                                .taskStatus: PropertyRef(id: "p-sta", name: "Status", type: "status",
+                                                         options: ["Ouvert", "Clos"],
+                                                         completeOptions: ["Clos"])
+                              ]),
+                              dataSourceID: "ds-tasks",
+                              settings: TaskFilterSettings())
+
+        let options = await cache.statusOptions()
+
+        XCTAssertEqual(options.map(\.name), ["Ouvert", "Clos"])
+        XCTAssertEqual(options.filter(\.isComplete).map(\.name), ["Clos"])
+    }
+
+    /// Écrire un statut ordinaire garde la tâche, avec sa nouvelle valeur : la
+    /// ligne se met à jour sans attendre le prochain rafraîchissement.
+    func testWritingAStatusUpdatesTheCachedTask() async throws {
+        let transport = FixtureTransport()
+        await transport.enqueue(.post, "/v1/data_sources/ds-tasks/query", status: 200,
+                                json: response([page("t-1", "Écrire")]))
+        await transport.enqueue(.patch, "/v1/pages/t-1", status: 200,
+                                json: #"{"object":"page","id":"t-1"}"#)
+        let cache = makeCache(transport)
+        try await cache.refresh()
+
+        let completed = try await cache.setStatus("En revue", on: "t-1")
+
+        XCTAssertFalse(completed)
+        let updated = await cache.tasks.first
+        XCTAssertEqual(updated?.statusValue, "En revue")
+    }
+
+    /// Un statut du groupe « terminé » sort la tâche de la liste sur-le-champ.
+    func testWritingACompleteStatusRemovesTheTask() async throws {
+        let transport = FixtureTransport()
+        await transport.enqueue(.post, "/v1/data_sources/ds-tasks/query", status: 200,
+                                json: response([page("t-1", "Écrire"), page("t-2", "Relire")]))
+        await transport.enqueue(.patch, "/v1/pages/t-1", status: 200,
+                                json: #"{"object":"page","id":"t-1"}"#)
+        let cache = TaskCache(client: NotionClient(transport: transport,
+                                                   authorization: StaticAuthorization(),
+                                                   rateLimiter: .forTesting(VirtualTimeSource())),
+                              mapper: PropertyMapper(map: mapping.merging([
+                                .taskStatus: PropertyRef(id: "p-sta", name: "Status", type: "status",
+                                                         options: ["En cours", "Terminé"],
+                                                         completeOptions: ["Terminé"])
+                              ]) { _, new in new }),
+                              dataSourceID: "ds-tasks",
+                              settings: TaskFilterSettings())
+        try await cache.refresh()
+
+        let completed = try await cache.setStatus("Terminé", on: "t-1")
+
+        XCTAssertTrue(completed)
+        let remaining = await cache.tasks.map(\.id)
+        XCTAssertEqual(remaining, ["t-2"])
+    }
+
     // MARK: - T060 : pagination et filtres
 
     /// FR-009 — la pagination est suivie jusqu'à `has_more` faux, sans plafond.

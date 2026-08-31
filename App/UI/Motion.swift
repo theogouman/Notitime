@@ -33,6 +33,18 @@ enum Motion {
     static let staggerStep: Double = 0.04
     static let staggerBlur: CGFloat = 3
 
+    // Les lignes d'une liste qui se pose.
+    //
+    // Ni flou ni longue course : douze points de montée étalés sur une demie
+    // seconde, floutés, donnaient l'impression de lignes qui flottent en
+    // descendant plutôt que d'une liste qui arrive. Une liste se pose vite et
+    // net — six points, un tiers de seconde, et un décalage assez serré pour
+    // qu'on lise un mouvement d'ensemble et non dix mouvements.
+    static let rowsDuration: Double = 0.32
+    static let rowsDistance: CGFloat = 6
+    static let rowsStep: Double = 0.02
+    static let rowsScale: CGFloat = 0.985
+
     // « Tabs sliding » — la pilule glisse d'un onglet à l'autre.
     static let tabsDuration: Double = 0.25
 

@@ -15,6 +15,7 @@ public enum NotitimeStore {
         CachedTask.self,
         CachedProject.self,
         RecentTaskUse.self,
+        HiddenTask.self,
         ActiveSession.self,
         OutboxEntry.self,
         AppSettings.self
